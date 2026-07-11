@@ -2,4 +2,6 @@
 /deploy/
 /out/
 /src/
+/downloads/
+/**/__pycache__/
 /*.stamp

@@ -1,0 +1,11 @@
+#!/bin/sh
+
+mkdir -p /proc /sys /dev /dev/pts /dev/shm /run /tmp
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sysfs /sys 2>/dev/null || true
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+mount -t devpts devpts /dev/pts 2>/dev/null || true
+mount -t tmpfs tmpfs /dev/shm 2>/dev/null || true
+
+hostname unmatched
+echo "HiFive Unmatched BusyBox rootfs"

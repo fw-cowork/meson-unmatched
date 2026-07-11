@@ -25,7 +25,7 @@ Linux device tree and kernel config
 ```
 
 The framework should provide repeatable, inspectable builds for these layers
-while keeping the root filesystem and user-space distribution outside scope.
+with a small BusyBox root filesystem and no full user-space distribution.
 
 ## 2. Problem Statement
 
@@ -60,6 +60,8 @@ u-boot-spl.bin
 u-boot.itb
 Image.gz
 hifive-unmatched-a00.dtb
+rootfs.ext4
+unmatched-lite.img
 ```
 
 It manages:
@@ -79,7 +81,6 @@ optional comparison against Yocto known-good outputs
 The framework does not build:
 
 ```text
-rootfs
 RPM/IPK/DEB packages
 full SDK sysroots
 SPDX/SBOM archives
@@ -87,11 +88,8 @@ complete .wic SD-card images
 large user-space stacks
 ```
 
-The full Yocto SD image remains the known-good base image:
-
-```text
-sifiveinc-2026.01/build/tmp/deploy/images/unmatched/demo-coreip-cli-unmatched.rootfs.wic.xz
-```
+The framework creates its own GPT image with a BusyBox ext4 rootfs. Full Yocto
+images and package feeds remain outside scope.
 
 ## 4. Design Principles
 
@@ -153,10 +151,11 @@ meson-unmatched/deploy/
 
 Deleting them must not delete design intent or configuration.
 
-### Local Mirrors First
+### Optional Local Mirrors
 
-The Yocto build already downloaded git mirrors. The framework should use them
-by default and avoid network access when possible.
+The framework can use a local Git mirror through `UNMATCHED_LITE_GIT_CACHE`.
+Without one, existing checkouts are reused and missing sources come from their
+pinned upstream URLs.
 
 ## 5. Framework Architecture
 
@@ -203,11 +202,23 @@ meson-unmatched/
   DESIGN.md
   meson.build
   .gitignore
+  configs/
+    linux/unmatched_defconfig
+  rootfs/
+    etc/inittab
+    etc/init.d/rcS
   cross/
     riscv64-linux-gnu.ini
     riscv64-freedomusdk-linux.ini
   scripts/
     litebuild.py
+    fat.py
+
+Repository-level inputs:
+
+```text
+patches/u-boot/2026.01/
+patches/linux/6.18/
 ```
 
 Future tracked framework files:
@@ -263,7 +274,7 @@ The board manifest describes source-level and artifact-level facts:
       "repo": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git",
       "local_mirror": "git.kernel.org.pub.scm.linux.kernel.git.stable.linux.git",
       "revision": "a607c8f744340ad2c2486d46e96b66df47caffba",
-      "defconfig": "sifiveinc-2026.01/meta-sifive/recipes-kernel/linux/linux-sifive-6.18.3+git/unmatched/defconfig",
+      "defconfig": "meson-unmatched/configs/linux/unmatched_defconfig",
       "dtb": "sifive/hifive-unmatched-a00.dtb"
     }
   }
@@ -418,7 +429,7 @@ Source resolution order:
 
 ```text
 1. Existing src/<component> git checkout
-2. Local Yocto mirror under sifiveinc-2026.01/build/downloads/git2
+2. Optional `UNMATCHED_LITE_GIT_CACHE` mirror
 3. Upstream URL
 ```
 
@@ -444,14 +455,14 @@ builds.
 
 ## 11. Patch Management
 
-Initial patch sources come from the SDK:
+Patch sources are kept in the repository:
 
 ```text
 U-Boot:
-sifiveinc-2026.01/meta-sifive/recipes-bsp/u-boot/u-boot-sifive-2026.01/riscv64/0005-riscv-dts-Add-few-PMU-events.patch
+patches/u-boot/2026.01/0005-riscv-dts-Add-few-PMU-events.patch
 
 Linux:
-sifiveinc-2026.01/freedom-u-sdk/recipes-kernel/linux/linux-sifive/freedom-u-sdk/0001-riscv-dts-sifive-unmatched-keep-leds-settings.patch
+patches/linux/6.18/0001-riscv-dts-sifive-unmatched-keep-leds-settings.patch
 ```
 
 Framework direction:
@@ -506,8 +517,10 @@ The Python driver receives:
 
 ```text
 cross_compile
+sys_root
 toolchain_bindir
 native_bindirs
+native_sysroot_dirs
 ```
 
 from Meson external properties.
@@ -553,6 +566,8 @@ dtc
 openssl
 python3
 git
+mke2fs
+sgdisk
 ```
 
 Policy:
@@ -623,7 +638,7 @@ Inputs:
 src/u-boot
 deploy/fw_dynamic.bin
 sifive_unmatched_defconfig
-U-Boot PMU patch
+patches/u-boot/2026.01/0005-riscv-dts-Add-few-PMU-events.patch
 ```
 
 Configure:
@@ -668,14 +683,14 @@ Inputs:
 
 ```text
 src/linux
-SDK unmatched defconfig
-Linux LED keep patch
+configs/linux/unmatched_defconfig
+patches/linux/6.18/0001-riscv-dts-sifive-unmatched-keep-leds-settings.patch
 ```
 
 Configure:
 
 ```bash
-cp <sdk-defconfig> out/linux/.config
+cp configs/linux/unmatched_defconfig out/linux/.config
 make -C src/linux \
   O=out/linux \
   ARCH=riscv \
@@ -709,6 +724,27 @@ hifive-unmatched-a00.dtb exists and is nonzero
 dtc can decompile the DTB when available
 ```
 
+### BusyBox Rootfs Pipeline
+
+Inputs:
+
+```text
+BusyBox 1.37.0 source tarball
+rootfs/ overlay
+cross-file toolchain and sysroot
+```
+
+Build:
+
+```bash
+ninja -C meson-unmatched/builddir rootfs
+```
+
+The driver builds a static BusyBox binary, installs its applet links into an
+out-of-tree root directory, copies the tracked init scripts, and creates an
+ext4 image with `mke2fs -d`. No mount, fakeroot, package manager, or Yocto WIC
+template is required.
+
 ## 14. Artifact Contract
 
 Deploy directory is the framework API:
@@ -725,6 +761,9 @@ u-boot-spl.bin
 u-boot.itb
 Image.gz
 hifive-unmatched-a00.dtb
+busybox
+rootfs.ext4
+unmatched-lite.img
 ```
 
 Debug/secondary artifacts:
@@ -755,20 +794,15 @@ came from which source.
 
 ## 15. Boot Media Strategy
 
-The framework does not create a complete SD image.
-
-Recommended workflow:
-
-1. Flash the Yocto-generated full image once.
-2. Keep rootfs unchanged.
-3. Replace boot artifacts through one of:
+The framework creates a complete GPT image with fixed Unmatched partition
+offsets and a BusyBox ext4 rootfs:
 
 ```text
-U-Boot TFTP
-manual copy to boot partition
-future update-boot-partition helper
-future package-boot tarball
+SPL raw region -> U-Boot ITB raw region -> FAT boot -> ext4 BusyBox rootfs
 ```
+
+The build never writes removable media. Flashing remains an explicit separate
+operation after the image has been inspected.
 
 Do not hide media writes inside normal build targets. Any command that writes
 to `/dev/sdX` must be explicit and separate.
@@ -948,7 +982,6 @@ add verification rules
 Possible future components:
 
 ```text
-minimal BusyBox rootfs
 initramfs
 device-tree overlays
 OpenOCD config
@@ -1022,11 +1055,8 @@ board-side PCIe checklist is documented
 
 1. Should source dirty mode be supported in phase 2, or should all experiments
    be patches first?
-2. Should the framework vendor SDK patches into `meson-unmatched/patches/`, or
-   keep referencing the local SDK tree?
+2. Should an initramfs be added alongside the ext4 BusyBox rootfs?
 3. Should `u-boot.itb` be deployed by replacing the raw U-Boot partition, by
    TFTP, or both?
 4. Should Linux modules be built later, or is built-in PCIe/NVMe enough for the
    study workflow?
-5. Should a minimal initramfs be added, or should rootfs remain strictly out of
-   scope?
