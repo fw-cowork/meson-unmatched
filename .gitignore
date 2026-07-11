@@ -1,0 +1,5 @@
+/builddir/
+/deploy/
+/out/
+/src/
+/*.stamp
