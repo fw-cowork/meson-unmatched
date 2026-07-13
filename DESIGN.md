@@ -209,7 +209,8 @@ Tracked framework files:
     etc/init.d/rcS
   cross/
     README.md
-    riscv64-linux-gnu.ini
+    sifive-freedom-u-sdk.ini
+  toolchain.sh
   patches/
     u-boot/2026.01/0005-riscv-dts-Add-few-PMU-events.patch
     linux/6.18/0001-riscv-dts-sifive-unmatched-keep-leds-settings.patch
@@ -286,11 +287,11 @@ The cross file describes toolchain facts:
 
 ```ini
 [binaries]
-c = 'riscv64-linux-gnu-gcc'
-cpp = 'riscv64-linux-gnu-g++'
-ar = 'riscv64-linux-gnu-ar'
-strip = 'riscv64-linux-gnu-strip'
-objcopy = 'riscv64-linux-gnu-objcopy'
+c = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-gcc'
+cpp = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-g++'
+ar = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-ar'
+strip = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-strip'
+objcopy = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-objcopy'
 
 [host_machine]
 system = 'linux'
@@ -299,8 +300,9 @@ cpu = 'sifive-u740'
 endian = 'little'
 
 [properties]
-cross_compile = 'riscv64-linux-gnu-'
-toolchain_bindir = '/optional/path'
+cross_compile = 'riscv64-sifive-linux-'
+toolchain_bindir = '@DIRNAME@/../toolchains/sifive/bin'
+sys_root = '@DIRNAME@/../toolchains/sifive/sysroot'
 native_bindirs = []
 ```
 
@@ -491,13 +493,14 @@ Meson cross files are the authoritative toolchain descriptions.
 Provided cross files:
 
 ```text
-cross/riscv64-linux-gnu.ini
+cross/sifive-freedom-u-sdk.ini
 ```
 
 Preferred setup:
 
 ```bash
-meson setup builddir . --cross-file cross/riscv64-linux-gnu.ini
+./toolchain.sh setup
+meson setup builddir . --cross-file cross/sifive-freedom-u-sdk.ini
 ```
 
 SDK reuse setup:
@@ -542,8 +545,9 @@ Pass:
 CC="<prefix>gcc -B<shim>/"
 ```
 
-This is a compatibility layer, not the preferred long-term path. The cleaner
-developer setup is a normal distro or vendor RISC-V Linux toolchain.
+This is a compatibility layer for the SiFive SDK's relocatable GCC. The
+repository defaults to the SiFive-generated Linux SDK and does not discover a
+distro RISC-V compiler automatically.
 
 ### Native Build Tools
 

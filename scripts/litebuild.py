@@ -188,17 +188,6 @@ def build_env(paths, toolchain):
         env["CROSS_COMPILE"] = toolchain.cross_compile
     if toolchain.sysroot:
         env["UNMATCHED_LITE_SYSROOT"] = toolchain.sysroot
-    elif "CROSS_COMPILE" not in env:
-        for prefix in (
-            "riscv64-linux-gnu-",
-            "riscv64-unknown-linux-gnu-",
-            "riscv64-freedomusdk-linux-",
-            "riscv64-unknown-elf-",
-        ):
-            if shutil.which(prefix + "gcc", path=env.get("PATH")):
-                env["CROSS_COMPILE"] = prefix
-                break
-
     env.setdefault("ARCH", "riscv")
     native_flex_shim(paths, env)
     return env
@@ -214,8 +203,8 @@ def require_cross(env):
     prefix = env.get("CROSS_COMPILE")
     if not prefix:
         raise SystemExit(
-            "No RISC-V cross compiler found. Set CROSS_COMPILE, for example "
-            "CROSS_COMPILE=riscv64-linux-gnu-"
+            "No RISC-V cross compiler configured. Run ./toolchain.sh setup or "
+            "provide an explicit Meson cross file."
         )
     if not shutil.which(prefix + "gcc", path=env.get("PATH")):
         raise SystemExit(f"Cross compiler not found: {prefix}gcc")

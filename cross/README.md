@@ -1,14 +1,22 @@
 # Cross Files
 
-`riscv64-linux-gnu.ini` is the tracked default for a normal distro RISC-V
-cross toolchain.
+`sifive-freedom-u-sdk.ini` is the tracked default. It uses the normalized
+toolchain installed by `../toolchain.sh setup` from SiFive's official
+Freedom-U-SDK `2026.01.00` source release.
 
-SDK-specific cross files are intentionally not tracked. Keep a local file
-outside this repository and select it explicitly:
+Install the default toolchain before configuring Meson:
+
+```bash
+./toolchain.sh setup
+./build.sh qemu
+```
+
+The generated SDK is ignored by git and has no dependency on a sibling KAS
+checkout. Its source, build tree, installed SDK, compiler links, and sysroot
+live under `toolchains/sifive/` by default.
+
+An alternate cross file remains available only as an explicit override:
 
 ```bash
 UNMATCHED_LITE_CROSS_FILE=/path/to/toolchain.ini ./build.sh qemu
 ```
-
-This keeps the Meson build independent from any particular KAS or Yocto
-checkout while still allowing an SDK toolchain to be reused.

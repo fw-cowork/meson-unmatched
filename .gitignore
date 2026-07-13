@@ -3,5 +3,6 @@
 /out/
 /src/
 /downloads/
+/toolchains/
 /**/__pycache__/
 /*.stamp
