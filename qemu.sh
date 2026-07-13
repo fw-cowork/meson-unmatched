@@ -7,8 +7,8 @@ IMAGE="${UNMATCHED_LITE_QEMU_IMAGE:-${DEPLOY_DIR}/qemu-lite.img}"
 FIRMWARE="${UNMATCHED_LITE_QEMU_FIRMWARE:-${DEPLOY_DIR}/fw_dynamic.elf}"
 UBOOT="${UNMATCHED_LITE_QEMU_UBOOT:-${DEPLOY_DIR}/u-boot.bin}"
 QEMU_BIN="${QEMU_BIN:-qemu-system-riscv64}"
-MEMORY=1G
-CPUS=4
+MEMORY=2G
+CPUS=8
 TIMEOUT="${UNMATCHED_LITE_QEMU_TIMEOUT:-0}"
 SNAPSHOT_TMPDIR="${UNMATCHED_LITE_QEMU_TMPDIR:-/tmp}"
 BUILD=0
@@ -23,7 +23,7 @@ Start the QEMU profile:
 The QEMU profile has separate output under deploy/qemu/. It uses QEMU's virt
 machine and does not emulate the FU740 Boot ROM or the Unmatched SPL. The FIT
 contains the kernel, QEMU virt DTB, and BusyBox CPIO rootfs, so it requires the
-fixed virt configuration of four CPUs and 1 GiB memory used here.
+fixed virt configuration of eight CPUs and 2 GiB memory used here.
 
 Options:
   --build              Run ./build.sh qemu before starting QEMU

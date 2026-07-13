@@ -197,7 +197,7 @@ The upstream project decides how its own source is compiled.
 Tracked framework files:
 
 ```text
-meson-unmatched/
+.
   README.md
   DESIGN.md
   meson.build
@@ -208,18 +208,14 @@ meson-unmatched/
     etc/inittab
     etc/init.d/rcS
   cross/
+    README.md
     riscv64-linux-gnu.ini
-    riscv64-freedomusdk-linux.ini
+  patches/
+    u-boot/2026.01/0005-riscv-dts-Add-few-PMU-events.patch
+    linux/6.18/0001-riscv-dts-sifive-unmatched-keep-leds-settings.patch
   scripts/
     litebuild.py
     fat.py
-
-Repository-level inputs:
-
-```text
-patches/u-boot/2026.01/
-patches/linux/6.18/
-```
 
 Future tracked framework files:
 
@@ -496,21 +492,18 @@ Provided cross files:
 
 ```text
 cross/riscv64-linux-gnu.ini
-cross/riscv64-freedomusdk-linux.ini
 ```
 
 Preferred setup:
 
 ```bash
-meson setup meson-unmatched/builddir meson-unmatched \
-  --cross-file meson-unmatched/cross/riscv64-linux-gnu.ini
+meson setup builddir . --cross-file cross/riscv64-linux-gnu.ini
 ```
 
-Freedom-U-SDK reuse setup:
+SDK reuse setup:
 
 ```bash
-meson setup meson-unmatched/builddir meson-unmatched \
-  --cross-file meson-unmatched/cross/riscv64-freedomusdk-linux.ini
+UNMATCHED_LITE_CROSS_FILE=/path/to/toolchain.ini ./build.sh qemu
 ```
 
 The Python driver receives:

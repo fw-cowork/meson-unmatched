@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${UNMATCHED_LITE_BUILD_DIR:-${SCRIPT_DIR}/builddir}"
-CROSS_FILE="${UNMATCHED_LITE_CROSS_FILE:-${SCRIPT_DIR}/cross/riscv64-freedomusdk-linux.ini}"
+CROSS_FILE="${UNMATCHED_LITE_CROSS_FILE:-${SCRIPT_DIR}/cross/riscv64-linux-gnu.ini}"
 MESON_BIN="${MESON:-meson}"
 NINJA_BIN="${NINJA:-ninja}"
 

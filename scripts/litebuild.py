@@ -34,8 +34,8 @@ SPL_TYPE = "5B193300-FC78-40CD-8002-E86C45580B47"
 UBOOT_TYPE = "2E54B353-1271-4842-806F-E436D6AF6985"
 QEMU_BOOT_START = 2048
 QEMU_BOOT_SECTORS = 262144
-QEMU_CPUS = "4"
-QEMU_MEMORY = "1G"
+QEMU_CPUS = "8"
+QEMU_MEMORY = "2G"
 
 REPOS = {
     "opensbi": {
@@ -59,7 +59,6 @@ REPOS = {
 class Paths:
     def __init__(self, profile):
         self.repo = Path(__file__).resolve().parents[1]
-        self.ws = self.repo.parent
         self.profile = profile
         cache = os.environ.get("UNMATCHED_LITE_GIT_CACHE")
         self.cache = Path(cache) if cache else None
@@ -96,8 +95,8 @@ class Paths:
         self.qemu_uboot = self.deploy / "u-boot-qemu.bin"
         self.linux_defconfig = self.repo / "configs/linux/unmatched_defconfig"
         self.rootfs_overlay = self.repo / "rootfs"
-        self.uboot_patch = self.ws / "patches/u-boot/2026.01/0005-riscv-dts-Add-few-PMU-events.patch"
-        self.linux_patch = self.ws / "patches/linux/6.18/0001-riscv-dts-sifive-unmatched-keep-leds-settings.patch"
+        self.uboot_patch = self.repo / "patches/u-boot/2026.01/0005-riscv-dts-Add-few-PMU-events.patch"
+        self.linux_patch = self.repo / "patches/linux/6.18/0001-riscv-dts-sifive-unmatched-keep-leds-settings.patch"
 
 
 class Toolchain:
@@ -550,7 +549,7 @@ def build_uboot(paths, env):
     make_base = _uboot_make_base(paths, env, paths.uboot_out)
     if paths.profile == "qemu":
         run(make_base + ["qemu-riscv64_smode_defconfig"], env=env)
-        _set_config_option(paths.uboot_out / ".config", "CONFIG_BOOTDELAY", "0")
+        _set_config_option(paths.uboot_out / ".config", "CONFIG_BOOTDELAY", "5")
         run(make_base + ["olddefconfig"], env=env)
         run(make_base + ["-j", jobs()], env=env)
         copy_artifact(paths.uboot_out / "u-boot.bin", paths.qemu_uboot_bin)

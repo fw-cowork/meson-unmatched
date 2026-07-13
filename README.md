@@ -16,9 +16,8 @@ not use a Yocto WIC image or a rootfs copied from the Freedom-U-SDK.
 The maintained entry point is Meson/Ninja:
 
 ```bash
-meson setup meson-unmatched/builddir meson-unmatched \
-  --cross-file meson-unmatched/cross/riscv64-freedomusdk-linux.ini
-ninja -C meson-unmatched/builddir sd-image
+meson setup builddir . --cross-file cross/riscv64-linux-gnu.ini
+ninja -C builddir sd-image
 ```
 
 Convenience wrappers provide the same build and QEMU rootfs smoke test:
@@ -51,34 +50,28 @@ Linux 6.18.3    a607c8f744340ad2c2486d46e96b66df47caffba
 The wrapper applies the same local Unmatched patches used by the SDK for
 U-Boot and Linux.
 
-The Linux defconfig and both patches are stored in this repository. The
-Freedom-U-SDK checkout is only needed when selecting its cross-toolchain file.
+The Linux defconfig and both patches are stored in this repository. An SDK
+checkout is optional and is selected only through an external Meson cross file.
 
 ## Setup
 
-From the workspace root:
+From this repository:
 
 ```bash
-meson setup meson-unmatched/builddir meson-unmatched \
-  --cross-file meson-unmatched/cross/riscv64-freedomusdk-linux.ini
-ninja -C meson-unmatched/builddir info
-ninja -C meson-unmatched/builddir check
+meson setup builddir . --cross-file cross/riscv64-linux-gnu.ini
+ninja -C builddir info
+ninja -C builddir check
 ```
 
-Toolchain selection is owned by Meson cross files. The shared framework files
-live under top-level `cross/`:
+Toolchain selection is owned by the repository's Meson cross files:
 
 ```text
 cross/riscv64-linux-gnu.ini
-cross/riscv64-freedomusdk-linux.ini
 ```
 
-Compatibility copies may remain under `meson-unmatched/cross/` while the Meson
-targets are migrated to the shared framework.
-
 Use `riscv64-linux-gnu.ini` when a normal distro cross toolchain is installed.
-Use `riscv64-freedomusdk-linux.ini` to reuse the local Freedom-U-SDK cross
-compiler and native helper tools.
+To reuse a Yocto/Freedom-U-SDK toolchain, provide a local cross file with
+`UNMATCHED_LITE_CROSS_FILE`; that SDK is not part of this repository.
 
 When using the Yocto-built cross compiler outside BitBake, the wrapper creates
 a private `out/toolchain-shim/` directory so GCC can find the matching RISC-V
@@ -87,8 +80,7 @@ binutils without modifying the system or the Yocto tree.
 To force a toolchain:
 
 ```bash
-meson setup --wipe meson-unmatched/builddir meson-unmatched \
-  --cross-file meson-unmatched/cross/riscv64-linux-gnu.ini
+meson setup --wipe builddir . --cross-file cross/riscv64-linux-gnu.ini
 ```
 
 ## Build
