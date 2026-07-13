@@ -12,10 +12,11 @@ CPUS=8
 TIMEOUT="${UNMATCHED_LITE_QEMU_TIMEOUT:-0}"
 SNAPSHOT_TMPDIR="${UNMATCHED_LITE_QEMU_TMPDIR:-/tmp}"
 BUILD=0
+GDB_PORT=""
 
 usage() {
     cat <<'EOF'
-Usage: ./qemu.sh [--build] [--timeout SECONDS]
+Usage: ./qemu.sh [--build] [--timeout SECONDS] [--gdb PORT]
 
 Start the QEMU profile:
   OpenSBI FW_DYNAMIC -> QEMU S-mode U-Boot -> boot.scr -> FIT -> Linux -> BusyBox
@@ -28,6 +29,7 @@ fixed virt configuration of eight CPUs and 2 GiB memory used here.
 Options:
   --build              Run ./build.sh qemu before starting QEMU
   --timeout SECONDS    Stop QEMU after this many seconds
+  --gdb PORT           Pause at reset and listen for GDB on 127.0.0.1:PORT
   -h, --help           Show this message
 
 Environment overrides:
@@ -51,6 +53,10 @@ while [[ "$#" -gt 0 ]]; do
             TIMEOUT="${2:?missing timeout value}"
             shift 2
             ;;
+        --gdb)
+            GDB_PORT="${2:?missing GDB port}"
+            shift 2
+            ;;
         -h|--help|help)
             usage
             exit 0
@@ -62,6 +68,13 @@ while [[ "$#" -gt 0 ]]; do
             ;;
     esac
 done
+
+if [[ -n "$GDB_PORT" ]]; then
+    [[ "$GDB_PORT" =~ ^[1-9][0-9]{0,4}$ ]] && (( GDB_PORT <= 65535 )) || {
+        echo "invalid GDB port: $GDB_PORT" >&2
+        exit 2
+    }
+fi
 
 if [[ "$BUILD" -eq 1 ]]; then
     QEMU_SYSTEM_RISCV64="$QEMU_BIN" "${SCRIPT_DIR}/build.sh" qemu
@@ -98,6 +111,13 @@ qemu_args=(
     -drive "id=rootdisk,file=${IMAGE},if=none,format=raw"
     -device virtio-blk-device,drive=rootdisk
 )
+
+if [[ -n "$GDB_PORT" ]]; then
+    qemu_args+=(
+        -S
+        -gdb "tcp:127.0.0.1:${GDB_PORT}"
+    )
+fi
 
 if [[ "$TIMEOUT" != 0 ]]; then
     exec timeout "$TIMEOUT" "${qemu_args[@]}"

@@ -38,6 +38,16 @@ that FIT and its U-Boot boot script.
 `qemu.sh --build` builds and starts this profile. It does not emulate the
 FU740 ROM/SPL path.
 
+For reset-time debugging, start the paused GDB server and attach another
+terminal with `gdb-multiarch`:
+
+```bash
+./qemu-gdb.sh --build
+gdb-multiarch deploy/qemu/fw_dynamic.elf
+(gdb) target remote 127.0.0.1:1234
+(gdb) continue
+```
+
 ## Versions
 
 The pinned revisions match SiFive Freedom-U-SDK 2026.01 recipes:
