@@ -65,6 +65,44 @@ The Linux defconfig and both patches are stored in this repository. The default
 SiFive SDK is generated locally under `toolchains/sifive/`; no sibling SDK
 checkout is used.
 
+## Dependencies
+
+The project downloads its own source dependencies. On Debian or Ubuntu, install
+the required host tools once:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  bc bison build-essential chrpath cpio debianutils diffstat e2fsprogs file \
+  flex gawk gdisk git iputils-ping libacl1 locales m4 make meson ninja-build \
+  openssl python3 python3-git python3-jinja2 python3-pexpect python3-pip \
+  python3-subunit qemu-system-misc socat texinfo unzip wget xz-utils zstd
+python3 -m pip install --user kas
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+For GDB debugging, install the optional host debugger:
+
+```bash
+sudo apt-get install -y gdb-multiarch
+```
+
+`./build.sh toolchain` performs the SiFive toolchain bootstrap. It clones the
+pinned `sifiveinc/freedom-u-sdk` `2026.01.00` source release into
+`toolchains/sifive/sources/`, uses KAS to download its Yocto layers and build
+the `populate_sdk` target, then installs the generated Linux SDK under
+`toolchains/sifive/sdk/`. KAS is needed only for this initialization step; the
+normal Meson/QEMU build does not use a parent KAS checkout.
+
+The initial SDK build is large. SiFive recommends at least 140 GB of free disk
+space and 32 GB of RAM for Freedom-U-SDK image builds.
+
+After the toolchain is ready, `./build.sh` downloads the pinned OpenSBI,
+U-Boot, and Linux git revisions into `src/`; it downloads BusyBox 1.37.0 into
+`downloads/`. To reuse pre-downloaded content, set
+`UNMATCHED_LITE_GIT_CACHE`, `UNMATCHED_LITE_BUSYBOX_TARBALL`, or
+`UNMATCHED_LITE_DOWNLOAD_DIR` before building.
+
 ## Setup
 
 The default is a Linux SDK generated from SiFive's official
