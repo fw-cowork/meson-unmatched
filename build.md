@@ -70,6 +70,40 @@ OpenSBI FW_DYNAMIC -> QEMU S-mode U-Boot -> boot.scr -> FIT -> Linux -> BusyBox
 `deploy/qemu/fit.itb` 包含内核、QEMU virt DTB 和 BusyBox CPIO rootfs；
 `deploy/qemu/qemu-lite.img` 的 FAT 分区只包含 FIT 和 `boot.scr`。
 
+### FIT 格式
+
+FIT 是 Flattened Image Tree。它将多个启动组件和它们的元数据放入单个
+`fit.itb` 文件中。当前仓库只有 QEMU profile 使用 FIT；物理 Unmatched 镜像仍
+使用独立的 `Image.gz`、DTB、extlinux 配置和 ext4 rootfs 分区。
+
+QEMU 构建会生成 `out/qemu/fit.its`，再使用本次构建的 U-Boot `mkimage` 工具
+生成 `deploy/qemu/fit.itb`。FIT 的默认配置名为 `qemu`，包含：
+
+```text
+kernel   deploy/qemu/Image.gz          Linux 内核，加载和入口地址为 0x80200000
+fdt      out/qemu/qemu-virt.dtb        与当前 8 CPU、2 GiB QEMU virt 配置匹配的 DTB
+ramdisk  deploy/qemu/rootfs.cpio.gz    BusyBox initramfs
+```
+
+每个 FIT 子镜像都有 SHA-256 哈希。U-Boot 在加载时验证哈希，任意一个校验失败
+都会停止启动。`rootfs.cpio.gz` 在 FIT 中作为未再压缩的数据传给 Linux，由内核
+处理其 gzip CPIO 格式。
+
+`boot.scr` 的实际启动逻辑为：
+
+```text
+fatload virtio 0:1 0x84000000 fit.itb
+setenv bootargs console=ttyS0 earlycon=sbi
+bootm 0x84000000#qemu
+```
+
+因此 U-Boot 读取单个 FIT，并根据 `qemu` 配置同时取得内核、DTB 和 initramfs。
+检查 FIT 内容：
+
+```bash
+out/qemu/u-boot/tools/mkimage -l deploy/qemu/fit.itb
+```
+
 ## QEMU GDB 调试
 
 启动 QEMU 并在复位处暂停：
