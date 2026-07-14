@@ -1,0 +1,36 @@
+@startuml
+title Boot Artifact Deploy Flow
+
+start
+
+:Build OpenSBI;
+:Deploy fw_dynamic.bin;
+
+:Build U-Boot SPL and proper;
+:Consume fw_dynamic.bin;
+:Deploy u-boot-spl.bin;
+:Deploy u-boot.itb;
+
+:Build Linux;
+:Deploy Image.gz;
+:Deploy hifive-unmatched-a00.dtb;
+
+:Verify artifacts;
+if (all required artifacts valid?) then (yes)
+  :Write deploy/manifest.json;
+  :Optional boot partition update;
+  if (user passed device explicitly?) then (yes)
+    :Mount SD boot partition;
+    :Copy boot artifacts;
+    :Sync and unmount;
+  else (no)
+    :Do not touch removable media;
+  endif
+else (no)
+  :Fail build and keep logs;
+endif
+
+stop
+
+@enduml
+

@@ -1,0 +1,31 @@
+@startuml
+title Unmatched Lite Build Sequence
+
+actor User
+participant Meson
+participant Ninja
+participant "litebuild.py" as LiteBuild
+database "YAML manifests" as Manifest
+database "Meson cross file" as Cross
+collections "src/" as Source
+collections "out/" as Out
+collections "deploy/" as Deploy
+
+User -> Meson : meson setup builddir\n--cross-file cross/*.ini
+Meson -> Cross : read compiler and properties
+Meson -> Ninja : generate targets
+
+User -> Ninja : ninja opensbi-fw / u-boot / linux
+Ninja -> LiteBuild : run component command
+LiteBuild -> Manifest : read board and component contracts
+LiteBuild -> Source : clone or reuse source
+LiteBuild -> Source : checkout pinned revision
+LiteBuild -> Source : apply patch series
+LiteBuild -> Out : configure out-of-tree build
+LiteBuild -> Out : build component backend
+LiteBuild -> Deploy : copy declared artifacts
+LiteBuild -> Deploy : write manifest.json
+LiteBuild -> Ninja : return status
+Ninja -> User : build result
+
+@enduml

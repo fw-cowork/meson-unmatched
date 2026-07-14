@@ -1,0 +1,60 @@
+@startuml
+title Unmatched Study Repository Components
+
+skinparam componentStyle rectangle
+
+package "Reference Layer" {
+  [Freedom-U-SDK\nsifiveinc-2026.01/] as sdk
+  [Known-good SD Image] as yocto_image
+}
+
+package "Description Layer" {
+  [boards/] as boards
+  [manifests/] as manifests
+  [schemas/] as schemas
+  [cross/] as cross
+  [patches/] as patches
+  [3rdparty/] as thirdparty
+}
+
+package "Execution Layer" {
+  [meson-unmatched/] as meson_project
+  [scripts/] as scripts
+  [lab/] as lab
+}
+
+package "Evidence Layer" {
+  [deploy/] as deploy
+  [logs/] as logs
+  [docs/] as docs
+  [tests/] as tests
+}
+
+package "Upstream Source Trees\nignored generated state" {
+  [OpenSBI src] as opensbi_src
+  [U-Boot src] as uboot_src
+  [Linux src] as linux_src
+}
+
+boards --> manifests : board selection
+schemas --> manifests : validate YAML
+schemas --> boards : validate YAML
+cross --> meson_project : compiler and host-machine properties
+manifests --> scripts : source, revision, backend, artifact contracts
+patches --> scripts : ordered patch series
+thirdparty --> scripts : small vendored helpers
+
+meson_project --> scripts : custom targets
+scripts --> opensbi_src : fetch and patch
+scripts --> uboot_src : fetch and patch
+scripts --> linux_src : fetch and patch
+
+sdk --> scripts : local mirrors, known-good defconfigs
+sdk --> yocto_image : full rootfs image
+
+scripts --> deploy : boot artifacts and manifest.json
+scripts --> logs : build and verification logs
+tests --> scripts : schema, dry-run, artifact checks
+docs --> boards : bring-up notes
+
+@enduml

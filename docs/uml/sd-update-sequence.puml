@@ -1,0 +1,32 @@
+@startuml
+title SD Boot Partition Update Transaction
+
+actor Operator
+participant "scripts/unmatched" as CLI
+participant "Verifier" as Verify
+participant "Block Device Probe" as Probe
+participant "Mount Helper" as Mount
+participant "Boot Partition" as Boot
+
+Operator -> CLI : sd-update --device /dev/sdX --boot-only
+CLI -> Verify : verify deploy/current
+Verify --> CLI : artifact manifest valid
+CLI -> Probe : inspect device and partition
+Probe --> CLI : removable boot partition found
+CLI -> Operator : print mutation plan
+
+alt dry-run
+  CLI --> Operator : exit after plan
+else execute
+  CLI -> Mount : mount boot partition rw
+  Mount --> CLI : mount point
+  CLI -> Boot : copy new files to temporary names
+  CLI -> Boot : fsync files and directory
+  CLI -> Boot : rename temporary files into final names
+  CLI -> Mount : sync and unmount
+  Mount --> CLI : complete
+  CLI --> Operator : update complete
+end
+
+@enduml
+

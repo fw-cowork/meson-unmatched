@@ -1,0 +1,77 @@
+@startuml
+title Unmatched Framework Data Model
+
+class Board {
+  board: string
+  vendor: string
+  soc: string
+  arch: string
+  console: Console
+  boot_media: BootMedia
+}
+
+class Console {
+  baud: int
+  linux: string
+}
+
+class BootMedia {
+  type: string
+  partition_table: string
+}
+
+class Manifest {
+  name: string
+  source_set: string
+}
+
+class Component {
+  name: string
+  repo: string
+  mirror: string
+  revision: string
+  backend: string
+  defconfig: string
+}
+
+class PatchSeries {
+  component: string
+  version: string
+  patches: list
+}
+
+class Artifact {
+  from: string
+  to: string
+  required: bool
+  verifier: string
+}
+
+class DeployManifest {
+  board: string
+  manifest: string
+  cross_file: string
+  components: map
+}
+
+Board "1" *-- "1" Console
+Board "1" *-- "1" BootMedia
+Board "1" --> "1..*" Manifest : selects
+Manifest "1" *-- "1..*" Component
+Component "0..1" --> "1" PatchSeries
+Component "1" *-- "1..*" Artifact
+DeployManifest "1" --> "1" Board
+DeployManifest "1" --> "1" Manifest
+DeployManifest "1" --> "1..*" Artifact
+
+note right of Manifest
+Stored as YAML.
+Pinned source truth lives here.
+end note
+
+note right of DeployManifest
+Generated JSON.
+Records what was built and deployed.
+end note
+
+@enduml

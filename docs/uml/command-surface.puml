@@ -1,0 +1,52 @@
+@startuml
+title Framework Command Surface
+
+actor Operator
+
+rectangle "Operator Wrapper\nscripts/unmatched" as Wrapper {
+  usecase "info" as Info
+  usecase "fetch" as Fetch
+  usecase "build <component>" as Build
+  usecase "deploy" as Deploy
+  usecase "verify" as Verify
+  usecase "sd-update --device" as SdUpdate
+}
+
+rectangle "Meson/Ninja" as Meson {
+  usecase "setup" as Setup
+  usecase "custom targets" as Targets
+}
+
+rectangle "Framework Driver" as Driver {
+  usecase "resolve config" as Resolve
+  usecase "run backend" as Backend
+  usecase "write deploy metadata" as Metadata
+}
+
+rectangle "Safety Boundary" as Safety {
+  usecase "dry-run" as DryRun
+  usecase "explicit device" as Device
+  usecase "artifact verification" as ArtifactCheck
+}
+
+Operator --> Info
+Operator --> Fetch
+Operator --> Build
+Operator --> Deploy
+Operator --> Verify
+Operator --> SdUpdate
+
+Build --> Targets
+Targets --> Backend
+Backend --> Resolve
+Deploy --> Metadata
+Verify --> ArtifactCheck
+SdUpdate --> Device
+SdUpdate --> ArtifactCheck
+Fetch --> DryRun
+Deploy --> DryRun
+SdUpdate --> DryRun
+Setup --> Resolve
+
+@enduml
+

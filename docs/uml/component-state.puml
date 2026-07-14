@@ -1,0 +1,31 @@
+@startuml
+title Component Lifecycle State Machine
+
+[*] --> Declared
+Declared --> Fetched : fetch source
+Fetched --> CheckedOut : checkout revision
+CheckedOut --> Patched : apply manifest patch series
+Patched --> Configured : backend configure
+Configured --> Built : backend build
+Built --> Deployed : copy declared artifacts
+Deployed --> Verified : run artifact verifiers
+Verified --> [*]
+
+Fetched --> Failed : clone failure
+CheckedOut --> Failed : revision missing or dirty tree
+Patched --> Failed : patch rejects
+Configured --> Failed : missing tool or defconfig failure
+Built --> Failed : upstream build failure
+Deployed --> Failed : missing artifact or copy failure
+Verified --> Failed : verifier failure
+
+Failed --> [*]
+
+note right of Failed
+Failure output must include component,
+phase, command, working directory,
+log path, and error class.
+end note
+
+@enduml
+

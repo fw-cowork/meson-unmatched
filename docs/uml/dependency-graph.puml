@@ -1,0 +1,38 @@
+@startuml
+title Boot Artifact Dependency Graph
+
+skinparam componentStyle rectangle
+
+component "OpenSBI\ncomponent" as OpenSBI
+artifact "fw_dynamic.bin" as FwDynamic
+
+component "U-Boot\ncomponent" as UBoot
+artifact "u-boot-spl.bin" as UBootSpl
+artifact "u-boot.itb" as UBootItb
+
+component "Linux\ncomponent" as Linux
+artifact "Image.gz" as Image
+artifact "hifive-unmatched-a00.dtb" as Dtb
+
+component "Boot Partition\nartifact set" as BootSet
+
+OpenSBI --> FwDynamic : produces
+FwDynamic --> UBoot : consumed by
+UBoot --> UBootSpl : produces
+UBoot --> UBootItb : produces
+Linux --> Image : produces
+Linux --> Dtb : produces
+
+UBootSpl --> BootSet : required
+UBootItb --> BootSet : required
+Image --> BootSet : required
+Dtb --> BootSet : required
+
+note right of BootSet
+The SD boot set depends on both
+U-Boot and Linux artifacts. Linux
+does not depend on U-Boot at build time.
+end note
+
+@enduml
+
