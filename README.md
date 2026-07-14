@@ -141,50 +141,66 @@ UNMATCHED_LITE_CROSS_FILE=/path/to/toolchain.ini ./build.sh qemu
 
 ## Build
 
+### Unmatched (FU740 physical board)
+
 Fetch sources:
 
 ```bash
-ninja -C builddir fetch-sources
+./build.sh fetch-sources
 ```
 
 BusyBox is fetched from its upstream release tarball when it is not already in
 `downloads/`. Set `UNMATCHED_LITE_BUSYBOX_TARBALL` to use a
 pre-downloaded tarball.
 
-Build OpenSBI:
+Build individual components:
 
 ```bash
-ninja -C builddir opensbi-fw
-```
-
-Build U-Boot. This also builds OpenSBI first if needed:
-
-```bash
-ninja -C builddir u-boot
-```
-
-Build Linux:
-
-```bash
-ninja -C builddir linux
-```
-
-Build the BusyBox rootfs:
-
-```bash
-ninja -C builddir rootfs
+./build.sh opensbi-fw      # OpenSBI firmware
+./build.sh u-boot           # U-Boot SPL + proper (also builds OpenSBI)
+./build.sh linux            # Linux kernel
+./build.sh rootfs           # BusyBox rootfs
 ```
 
 Build the whole boot chain:
 
 ```bash
-ninja -C builddir bootchain
+./build.sh bootchain
 ```
 
-Build the complete GPT SD image:
+Build the complete GPT SD image (the default when no target is given):
 
 ```bash
-ninja -C builddir sd-image
+./build.sh                  # same as: ./build.sh sd-image
+```
+
+### Linux PCIe development
+
+Use the development target while editing Linux PCIe drivers or the host
+controller. It preserves `src/linux/` and `out/linux/.config` between builds:
+
+```bash
+./build.sh dev-linux
+# edit src/linux/
+./build.sh dev-linux
+```
+
+Do not run `./build.sh`, `./build.sh linux`, or `./build.sh qemu` while keeping
+experimental source changes: those reproducible targets reset their source
+checkout. Export a completed change by limiting the diff to files you modified:
+
+```bash
+git -C src/linux diff -- drivers/pci/ > patches/linux/0002-pcie-learning.patch
+```
+
+### QEMU (virt machine)
+
+The QEMU profile builds a separate artifact tree under `deploy/qemu/`. It uses
+OpenSBI, QEMU S-mode U-Boot, generic RISC-V Linux, and a FIT image. The profile
+only supports the complete image — individual component targets are not available:
+
+```bash
+./build.sh qemu
 ```
 
 ## Outputs
@@ -243,7 +259,7 @@ By default the Linux build resets `out/linux/.config` from
 For config experiments, edit `out/linux/.config` and run:
 
 ```bash
-UNMATCHED_LITE_KEEP_CONFIG=1 ninja -C builddir linux
+UNMATCHED_LITE_KEEP_CONFIG=1 ./build.sh linux
 ```
 
 ## Clean
@@ -251,7 +267,7 @@ UNMATCHED_LITE_KEEP_CONFIG=1 ninja -C builddir linux
 Remove generated build output and deploy artifacts while keeping source clones:
 
 ```bash
-ninja -C builddir clean-lite
+./build.sh clean-lite
 ```
 
 To remove sources too:
