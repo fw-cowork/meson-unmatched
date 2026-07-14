@@ -40,6 +40,32 @@ deploy/unmatched-lite.img
 U-Boot SPL -> OpenSBI FW_DYNAMIC -> U-Boot -> Linux Image.gz + DTB -> BusyBox rootfs
 ```
 
+### Linux 开发模式
+
+学习 PCIe 驱动或 host controller 时，使用 `dev-linux` 保留 Linux 工作树和
+内核配置：
+
+```bash
+./build.sh dev-linux
+# 修改 src/linux/ 中的 Linux 源码
+./build.sh dev-linux
+```
+
+首次调用会获取固定 Linux revision 并应用仓库已有的 Unmatched 补丁。之后
+`dev-linux` 不会执行 `git reset --hard` 或 `git clean`，因此 `src/linux/` 的
+修改会保留；它也不会覆盖 `out/linux/.config`。
+
+不要在保留实验修改期间执行普通 `./build.sh`、`./build.sh linux` 或
+`./build.sh qemu`，这些可复现构建目标会重置对应源码树。完成实验后，将你改动
+的文件导出为 patch：
+
+```bash
+git -C src/linux diff -- drivers/pci/ > patches/linux/0002-pcie-learning.patch
+```
+
+导出时只指定自己修改的路径。若改动与已有 `0001` 补丁修改同一个文件，需要先
+人工检查生成的 diff，避免把已有补丁的内容重复写入新 patch。
+
 ## QEMU
 
 QEMU profile 独立输出到 `deploy/qemu/`，使用 8 个 CPU 和 2 GiB 内存：

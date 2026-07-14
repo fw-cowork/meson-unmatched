@@ -251,10 +251,23 @@ def source_from_cache(paths, key):
     return REPOS[key]["url"]
 
 
-def git_checkout(paths, key, dest):
+def git_checkout(paths, key, dest, dev=False):
     spec = REPOS[key]
     dest.parent.mkdir(parents=True, exist_ok=True)
-    if not (dest / ".git").exists():
+    has_checkout = (dest / ".git").exists()
+    if dev and has_checkout:
+        revision = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=dest,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        say(f"DEV preserve {key} source at {revision[:12]}: {dest}")
+        if revision != spec["rev"]:
+            say(f"DEV warning {key} source differs from pinned {spec['rev'][:12]}")
+        return
+    if not has_checkout:
         run(["git", "clone", source_from_cache(paths, key), dest])
     run(["git", "reset", "--hard"], cwd=dest)
     run(["git", "clean", "-fdx"], cwd=dest)
@@ -473,17 +486,17 @@ def apply_patch_once(src, patch):
     run(["git", "apply", str(patch)], cwd=src)
 
 
-def fetch(paths, only=None):
+def fetch(paths, only=None, dev=False):
     selected = only or ("opensbi", "u-boot", "linux")
     for key in selected:
         if key == "opensbi":
-            git_checkout(paths, key, paths.opensbi_src)
+            git_checkout(paths, key, paths.opensbi_src, dev=dev)
         elif key == "u-boot":
-            git_checkout(paths, key, paths.uboot_src)
+            git_checkout(paths, key, paths.uboot_src, dev=dev)
             if paths.profile == "unmatched":
                 apply_patch_once(paths.uboot_src, paths.uboot_patch)
         elif key == "linux":
-            git_checkout(paths, key, paths.linux_src)
+            git_checkout(paths, key, paths.linux_src, dev=dev)
             if paths.profile == "unmatched":
                 apply_patch_once(paths.linux_src, paths.linux_patch)
         else:
@@ -566,8 +579,8 @@ def build_qemu_uboot(paths, env):
     copy_artifact(paths.qemu_uboot_out / "u-boot.bin", paths.qemu_uboot)
 
 
-def build_linux(paths, env):
-    fetch(paths, ("linux",))
+def build_linux(paths, env, dev=False):
+    fetch(paths, ("linux",), dev=dev)
     require_tools(["make", "bc", "bison", "flex", "openssl"], env)
     require_cross(env)
 
@@ -592,7 +605,9 @@ def build_linux(paths, env):
     defconfig = paths.linux_defconfig
     if not defconfig.exists():
         raise SystemExit(f"Missing Linux defconfig: {defconfig}")
-    if os.environ.get("UNMATCHED_LITE_KEEP_CONFIG") != "1":
+    if not paths.linux_out.joinpath(".config").exists() or (
+        not dev and os.environ.get("UNMATCHED_LITE_KEEP_CONFIG") != "1"
+    ):
         shutil.copy2(defconfig, paths.linux_out / ".config")
     run(make_base + ["olddefconfig"], env=env)
     run(make_base + ["-j", jobs(), "Image.gz", "dtbs"], env=env)
@@ -891,7 +906,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=[
         "info", "check", "fetch", "opensbi", "u-boot", "qemu-u-boot", "linux", "busybox", "rootfs",
-        "bootchain", "sd-image", "qemu-image", "clean", "stamp",
+        "bootchain", "sd-image", "qemu-image", "dev-linux", "clean", "stamp",
     ])
     parser.add_argument("--profile", choices=["unmatched", "qemu"], default="unmatched")
     parser.add_argument("--cross-compile", default="")
@@ -920,6 +935,8 @@ def main():
         build_qemu_uboot(paths, env)
     elif args.command == "linux":
         build_linux(paths, env)
+    elif args.command == "dev-linux":
+        build_linux(paths, env, dev=True)
     elif args.command == "busybox":
         build_busybox(paths, env)
     elif args.command == "rootfs":
