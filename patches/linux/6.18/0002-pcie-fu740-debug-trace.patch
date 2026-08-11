@@ -1,0 +1,348 @@
+diff --git a/drivers/pci/Kconfig b/drivers/pci/Kconfig
+index f94f5d384..6238e6f41 100644
+--- a/drivers/pci/Kconfig
++++ b/drivers/pci/Kconfig
+@@ -78,6 +78,18 @@ config PCI_DEBUG
+ 
+ 	  When in doubt, say N.
+ 
++config PCIE_ENUM_DEBUG
++	bool "PCIe enumeration step-by-step trace"
++	depends on PCI
++	help
++	  Add step-by-step pr_info() prints to the PCI core enumeration
++	  code (probe.c): every device found, BAR sizing results, and bus
++	  topology as the PCI core walks the tree.  Works on any PCI
++	  platform — QEMU virt, physical boards, etc.  Intended for
++	  learning the PCIe enumeration sequence.
++
++	  If unsure, say N.
++
+ config PCI_REALLOC_ENABLE_AUTO
+ 	bool "Enable PCI resource re-allocation detection"
+ 	depends on PCI_IOV
+diff --git a/drivers/pci/controller/dwc/Kconfig b/drivers/pci/controller/dwc/Kconfig
+index 349d46573..87c805709 100644
+--- a/drivers/pci/controller/dwc/Kconfig
++++ b/drivers/pci/controller/dwc/Kconfig
+@@ -386,6 +386,19 @@ config PCIE_FU740
+ 	  Say Y here if you want PCIe controller support for the SiFive
+ 	  FU740.
+ 
++config PCIE_FU740_DEBUG
++	bool "FU740 PCIe bring-up trace prints"
++	depends on PCIE_FU740
++	help
++	  Add step-by-step pr_info() trace prints to the FU740 PCIe driver,
++	  covering GPIO reset, PHY CR_PARA programming, LTSSM enable,
++	  link training poll, and enumeration handoff.  Intended for
++	  learning the PCIe root-complex initialisation sequence on real
++	  hardware.
++
++	  If unsure, say N.
++
++
+ config PCIE_UNIPHIER
+ 	bool "Socionext UniPhier PCIe controller (host mode)"
+ 	depends on ARCH_UNIPHIER || COMPILE_TEST
+diff --git a/drivers/pci/controller/dwc/pcie-fu740.c b/drivers/pci/controller/dwc/pcie-fu740.c
+index 663672520..14436b0a8 100644
+--- a/drivers/pci/controller/dwc/pcie-fu740.c
++++ b/drivers/pci/controller/dwc/pcie-fu740.c
+@@ -27,6 +27,20 @@
+ 
+ #include "pcie-designware.h"
+ 
++/* ---------- Step-by-step bring-up trace (CONFIG_PCIE_FU740_DEBUG) ---------- */
++#define fu740_debug(fmt, ...)						\
++	do {								\
++		if (IS_ENABLED(CONFIG_PCIE_FU740_DEBUG))		\
++			pr_info("fu740-pcie: " fmt, ##__VA_ARGS__);	\
++	} while (0)
++
++#define fu740_debug_step(n, fmt, ...)					   \
++	do {								   \
++		if (IS_ENABLED(CONFIG_PCIE_FU740_DEBUG))		   \
++			pr_info("fu740-pcie: [Step %2d] " fmt, n, ##__VA_ARGS__); \
++	} while (0)
++
++
+ #define to_fu740_pcie(x)	dev_get_drvdata((x)->dev)
+ 
+ struct fu740_pcie {
+@@ -183,6 +197,8 @@ static int fu740_pcie_start_link(struct dw_pcie *pci)
+ 	int ret;
+ 	u32 orig, tmp;
+ 
++	fu740_debug_step(15, "start_link: LNKCAP offset=0x%%x\n", cap_exp);
++
+ 	/*
+ 	 * Force 2.5GT/s when starting the link, due to some devices not
+ 	 * probing at higher speeds. This happens with the PCIe switch
+@@ -195,21 +211,26 @@ static int fu740_pcie_start_link(struct dw_pcie *pci)
+ 
+ 	tmp = dw_pcie_readl_dbi(pci, cap_exp + PCI_EXP_LNKCAP);
+ 	orig = tmp & PCI_EXP_LNKCAP_SLS;
++	fu740_debug_step(16, "force Gen1: LNKCAP=0x%%08x orig=0x%%x -> 2.5GT/s\n", tmp, orig);
+ 	tmp &= ~PCI_EXP_LNKCAP_SLS;
+ 	tmp |= PCI_EXP_LNKCAP_SLS_2_5GB;
+ 	dw_pcie_writel_dbi(pci, cap_exp + PCI_EXP_LNKCAP, tmp);
+ 
+ 	/* Enable LTSSM */
++	fu740_debug_step(17, "enable LTSSM (mgmt+0x10 = 1)\n");
+ 	writel_relaxed(0x1, afp->mgmt_base + PCIEX8MGMT_APP_LTSSM_ENABLE);
+ 
++	fu740_debug_step(18, "waiting for link up...\n");
+ 	ret = dw_pcie_wait_for_link(pci);
+ 	if (ret) {
+ 		dev_err(dev, "error: link did not start\n");
+ 		goto err;
+ 	}
++	fu740_debug_step(19, "link up at Gen1!\n");
+ 
+ 	tmp = dw_pcie_readl_dbi(pci, cap_exp + PCI_EXP_LNKCAP);
+ 	if ((tmp & PCI_EXP_LNKCAP_SLS) != orig) {
++		fu740_debug_step(20, "re-training at native speed (orig=0x%%x)\n", orig);
+ 		dev_dbg(dev, "changing speed back to original\n");
+ 
+ 		tmp &= ~PCI_EXP_LNKCAP_SLS;
+@@ -225,6 +246,7 @@ static int fu740_pcie_start_link(struct dw_pcie *pci)
+ 			dev_err(dev, "error: link did not start at new speed\n");
+ 			goto err;
+ 		}
++		fu740_debug_step(21, "link up at native speed!\n");
+ 	}
+ 
+ 	ret = 0;
+@@ -241,10 +263,15 @@ static int fu740_pcie_host_init(struct dw_pcie_rp *pp)
+ 	struct device *dev = pci->dev;
+ 	int ret;
+ 
+-	/* Power on reset */
+-	fu740_pcie_drive_reset(afp);
++	fu740_debug_step(6, "host_init: assert PERST#\n");
++	fu740_pcie_assert_reset(afp);
++	fu740_debug_step(7, "host_init: enable slot power + 100ms\n");
++	fu740_pcie_power_on(afp);
++	fu740_debug_step(8, "host_init: deassert PERST#\n");
++	fu740_pcie_deassert_reset(afp);
+ 
+ 	/* Enable pcieauxclk */
++	fu740_debug_step(9, "host_init: enable pcie_aux clock\n");
+ 	ret = clk_prepare_enable(afp->pcie_aux);
+ 	if (ret) {
+ 		dev_err(dev, "unable to enable pcie_aux clock\n");
+@@ -255,25 +282,31 @@ static int fu740_pcie_host_init(struct dw_pcie_rp *pp)
+ 	 * Assert hold_phy_rst (hold the controller LTSSM in reset after
+ 	 * power_up_rst_n for register programming with cr_para)
+ 	 */
++	fu740_debug_step(10, "host_init: hold PHY reset (APP_HOLD_PHY_RST=1)\n");
+ 	writel_relaxed(0x1, afp->mgmt_base + PCIEX8MGMT_APP_HOLD_PHY_RST);
+ 
+ 	/* Deassert power_up_rst_n */
++	fu740_debug_step(11, "host_init: deassert PRCI power_up_rst_n\n");
+ 	ret = reset_control_deassert(afp->rst);
+ 	if (ret) {
+ 		dev_err(dev, "unable to deassert pcie_power_up_rst_n\n");
+ 		return ret;
+ 	}
+ 
++	fu740_debug_step(12, "host_init: programming PHY (8 lanes AC termination)\n");
+ 	fu740_pcie_init_phy(afp);
++	fu740_debug_step(13, "host_init: PHY done\n");
+ 
+ 	/* Disable pcieauxclk */
+ 	clk_disable_unprepare(afp->pcie_aux);
+ 	/* Clear hold_phy_rst */
++	fu740_debug_step(14, "host_init: release PHY + re-enable clock + set RC mode\n");
+ 	writel_relaxed(0x0, afp->mgmt_base + PCIEX8MGMT_APP_HOLD_PHY_RST);
+ 	/* Enable pcieauxclk */
+ 	clk_prepare_enable(afp->pcie_aux);
+ 	/* Set RC mode */
+ 	writel_relaxed(0x4, afp->mgmt_base + PCIEX8MGMT_DEVICE_TYPE);
++	fu740_debug("  device_type = Root Complex\n");
+ 
+ 	return 0;
+ }
+@@ -292,6 +325,8 @@ static int fu740_pcie_probe(struct platform_device *pdev)
+ 	struct dw_pcie *pci;
+ 	struct fu740_pcie *afp;
+ 
++	fu740_debug_step(1, "probe: platform driver matched\n");
++
+ 	afp = devm_kzalloc(dev, sizeof(*afp), GFP_KERNEL);
+ 	if (!afp)
+ 		return -ENOMEM;
+@@ -305,6 +340,7 @@ static int fu740_pcie_probe(struct platform_device *pdev)
+ 	afp->mgmt_base = devm_platform_ioremap_resource_byname(pdev, "mgmt");
+ 	if (IS_ERR(afp->mgmt_base))
+ 		return PTR_ERR(afp->mgmt_base);
++	fu740_debug("  dbi=0x%%px mgmt=0x%%px\n", pci->dbi_base, afp->mgmt_base);
+ 
+ 	/* Fetch GPIOs */
+ 	afp->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
+@@ -314,19 +350,23 @@ static int fu740_pcie_probe(struct platform_device *pdev)
+ 	afp->pwren = devm_gpiod_get_optional(dev, "pwren", GPIOD_OUT_LOW);
+ 	if (IS_ERR(afp->pwren))
+ 		return dev_err_probe(dev, PTR_ERR(afp->pwren), "unable to get pwren-gpios\n");
++	fu740_debug_step(2, "GPIOs acquired\n");
+ 
+ 	/* Fetch clocks */
+ 	afp->pcie_aux = devm_clk_get(dev, "pcie_aux");
+ 	if (IS_ERR(afp->pcie_aux))
+ 		return dev_err_probe(dev, PTR_ERR(afp->pcie_aux),
+ 					     "pcie_aux clock source missing or invalid\n");
++	fu740_debug_step(3, "pcie_aux clock acquired\n");
+ 
+ 	/* Fetch reset */
+ 	afp->rst = devm_reset_control_get_exclusive(dev, NULL);
+ 	if (IS_ERR(afp->rst))
+ 		return dev_err_probe(dev, PTR_ERR(afp->rst), "unable to get reset\n");
++	fu740_debug_step(4, "PRCI reset acquired\n");
+ 
+ 	platform_set_drvdata(pdev, afp);
++	fu740_debug_step(5, "calling dw_pcie_host_init()\n");
+ 
+ 	return dw_pcie_host_init(&pci->pp);
+ }
+@@ -335,6 +375,7 @@ static void fu740_pcie_shutdown(struct platform_device *pdev)
+ {
+ 	struct fu740_pcie *afp = platform_get_drvdata(pdev);
+ 
++	fu740_debug("shutdown: asserting PERST#\n");
+ 	/* Bring down link, so bootloader gets clean state in case of reboot */
+ 	fu740_pcie_assert_reset(afp);
+ }
+diff --git a/drivers/pci/probe.c b/drivers/pci/probe.c
+index 9cd032dff..af9a40d12 100644
+--- a/drivers/pci/probe.c
++++ b/drivers/pci/probe.c
+@@ -24,6 +24,20 @@
+ #include <linux/bitfield.h>
+ #include "pci.h"
+ 
++/*
++ * Enumeration trace — compiled when CONFIG_PCIE_ENUM_DEBUG=y.
++ * Works on any PCI platform (QEMU, Unmatched, …).
++ */
++#define pci_enum_trace(fmt, ...)					\
++	do {								\
++		if (IS_ENABLED(CONFIG_PCIE_ENUM_DEBUG))		\
++			pr_info("pci-enum: " fmt, ##__VA_ARGS__);	\
++	} while (0)
++
++#define pci_enum_step(n, fmt, ...)					   \
++	pci_enum_trace("[%2d] " fmt, n, ##__VA_ARGS__)
++
++
+ #define CARDBUS_LATENCY_TIMER	176	/* secondary latency timer */
+ #define CARDBUS_RESERVE_BUSNR	3
+ 
+@@ -227,6 +241,9 @@ int __pci_read_base(struct pci_dev *dev, enum pci_bar_type type,
+ 	res->name = pci_name(dev);
+ 
+ 	pci_read_config_dword(dev, pos, &l);
++
++	pci_enum_step(33, "%s BAR%u sizing: type=%d\n",
++		      dev_name(&dev->dev), res - dev->resource, type);
+ 	sz = sizes[0];
+ 
+ 	/*
+@@ -335,7 +352,15 @@ int __pci_read_base(struct pci_dev *dev, enum pci_bar_type type,
+ 
+ fail:
+ 	res->flags = 0;
++	pci_enum_trace("  BAR%u: invalid\n", (unsigned)(res - dev->resource));
++	res->flags = 0;
+ out:
++	pci_enum_trace("  BAR%u: start=0x%llx end=0x%llx size=0x%llx flags=0x%lx%s\n",
++		       (unsigned)(res - dev->resource),
++		       (unsigned long long)res->start,
++		       (unsigned long long)res->end,
++		       res->flags ? (res->end - res->start + 1) : 0ULL,
++		       res->flags, res->flags ? "" : " (unimpl)");
+ 	if (res->flags)
+ 		pci_info(dev, "%s %pR\n", res_name, res);
+ 
+@@ -2591,6 +2616,7 @@ static struct pci_dev *pci_scan_device(struct pci_bus *bus, int devfn)
+ {
+ 	struct pci_dev *dev;
+ 	u32 l;
++	u8 bus_nr = bus->number;
+ 
+ 	/*
+ 	 * Create pwrctrl device (if required) for the PCI device to handle the
+@@ -2613,11 +2639,20 @@ static struct pci_dev *pci_scan_device(struct pci_bus *bus, int devfn)
+ 	dev->device = (l >> 16) & 0xffff;
+ 
+ 	if (pci_setup_device(dev)) {
++		pci_enum_trace("  %04x:%02x:%02x.%d: Vendor=0x%04x Device=0x%04x SETUP_FAILED\n",
++			       pci_domain_nr(bus), bus_nr, PCI_SLOT(devfn), PCI_FUNC(devfn),
++			       l & 0xffff, (l >> 16) & 0xffff);
+ 		pci_bus_put(dev->bus);
+ 		kfree(dev);
+ 		return NULL;
+ 	}
+ 
++	pci_enum_trace("  %04x:%02x:%02x.%d: Vendor=0x%04x Device=0x%04x class=0x%06x %s\n",
++		       pci_domain_nr(bus), bus_nr, PCI_SLOT(devfn), PCI_FUNC(devfn),
++		       l & 0xffff, (l >> 16) & 0xffff, dev->class,
++		       (dev->hdr_type == PCI_HEADER_TYPE_BRIDGE) ? "BRIDGE" :
++		       (dev->hdr_type == PCI_HEADER_TYPE_NORMAL) ? "ENDP" : "OTHER");
++
+ 	return dev;
+ }
+ 
+@@ -3088,6 +3123,8 @@ static unsigned int pci_scan_child_bus_extend(struct pci_bus *bus,
+ 
+ 	dev_dbg(&bus->dev, "scanning bus\n");
+ 
++	pci_enum_step(31, "scan bus %02x (start=%d)\n", bus->number, start);
++
+ 	/* Go find them, Rover! */
+ 	for (devnr = 0; devnr < PCI_MAX_NR_DEVS; devnr++)
+ 		pci_scan_slot(bus, PCI_DEVFN(devnr, 0));
+@@ -3192,6 +3229,7 @@ static unsigned int pci_scan_child_bus_extend(struct pci_bus *bus,
+ 	 * Return how far we've got finding sub-buses.
+ 	 */
+ 	dev_dbg(&bus->dev, "bus scan returning with max=%02x\n", max);
++	pci_enum_step(38, "bus %02x scan done — max_subordinate=%02x\n", bus->number, max);
+ 	return max;
+ }
+ 
+@@ -3262,6 +3300,8 @@ int pci_host_probe(struct pci_host_bridge *bridge)
+ 	struct pci_bus *bus, *child;
+ 	int ret;
+ 
++	pci_enum_step(29, "=== ENUMERATION START ===\n");
++
+ 	pci_lock_rescan_remove();
+ 	ret = pci_scan_root_bus_bridge(bridge);
+ 	pci_unlock_rescan_remove();
+@@ -3271,6 +3311,7 @@ int pci_host_probe(struct pci_host_bridge *bridge)
+ 	}
+ 
+ 	bus = bridge->bus;
++	pci_enum_step(30, "root-bus scan done — bus=%02x\n", bus->number);
+ 
+ 	/* If we must preserve the resource configuration, claim now */
+ 	if (bridge->preserve_config)
+@@ -3280,14 +3321,18 @@ int pci_host_probe(struct pci_host_bridge *bridge)
+ 	 * Assign whatever was left unassigned. If we didn't claim above,
+ 	 * this will reassign everything.
+ 	 */
++	pci_enum_step(39, "assigning unassigned BAR resources\n");
+ 	pci_assign_unassigned_root_bus_resources(bus);
++	pci_enum_step(40, "BAR assignment done\n");
+ 
+ 	list_for_each_entry(child, &bus->children, node)
+ 		pcie_bus_configure_settings(child);
+ 
++	pci_enum_step(41, "adding devices to driver model\n");
+ 	pci_lock_rescan_remove();
+ 	pci_bus_add_devices(bus);
+ 	pci_unlock_rescan_remove();
++	pci_enum_step(42, "=== ENUMERATION COMPLETE ===\n");
+ 
+ 	/*
+ 	 * Ensure pm_runtime_enable() is called for the controller drivers

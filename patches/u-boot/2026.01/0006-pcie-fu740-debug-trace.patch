@@ -1,0 +1,264 @@
+diff --git a/drivers/pci/Kconfig b/drivers/pci/Kconfig
+index ea9868425d0..e3bff9dd856 100644
+--- a/drivers/pci/Kconfig
++++ b/drivers/pci/Kconfig
+@@ -11,6 +11,15 @@ menuconfig PCI
+ 
+ if PCI
+ 
++config PCIE_ENUM_DEBUG
++	bool "PCIe enumeration step-by-step trace"
++	default y
++	help
++	  Add step-by-step printf() prints to the PCI enumeration
++	  code (pci-uclass.c, pci_auto.c): every BDF probed, BAR sizing
++	  and allocation, bridge configuration.  Works on any PCI
++	  platform.  Intended for learning the PCIe enumeration.
++
+ config DM_PCI_COMPAT
+ 	bool "Enable compatible functions for PCI"
+ 	help
+@@ -177,6 +186,16 @@ config PCIE_DW_SIFIVE
+ 	  Say Y here if you want to enable PCIe controller support on
+ 	  FU740.
+ 
++config PCIE_DW_SIFIVE_DEBUG
++	bool "SiFive FU740 PCIe bring-up trace"
++	depends on PCIE_DW_SIFIVE
++	default y
++	help
++	  Add step-by-step printf() to the FU740 PCIe driver, covering
++	  GPIO reset, PHY CR_PARA programming, LTSSM enable, link
++	  training poll, iATU window setup, and enumeration handoff.
++	  Intended for learning the PCIe RC initialisation sequence.
++
+ config SYS_FSL_PCI_VER_3_X
+ 	bool
+ 
+diff --git a/drivers/pci/pci-uclass.c b/drivers/pci/pci-uclass.c
+index c370f8c6400..03cd5e7bab7 100644
+--- a/drivers/pci/pci-uclass.c
++++ b/drivers/pci/pci-uclass.c
+@@ -881,6 +881,9 @@ int pci_bind_bus_devices(struct udevice *bus)
+ 	int ari_off;
+ 	int ret;
+ 
++	if (CONFIG_IS_ENABLED(PCIE_ENUM_DEBUG))
++		printf("pci-enum: [23] bind bus %d\n", dev_seq(bus));
++
+ 	found_multi = false;
+ 	end = PCI_BDF(dev_seq(bus), PCI_MAX_PCI_DEVICES - 1,
+ 		      PCI_MAX_PCI_FUNCTIONS - 1);
+@@ -898,8 +901,12 @@ int pci_bind_bus_devices(struct udevice *bus)
+ 		/* Check only the first access, we don't expect problems */
+ 		ret = pci_bus_read_config(bus, bdf, PCI_VENDOR_ID, &vendor,
+ 					  PCI_SIZE_16);
+-		if (ret || vendor == 0xffff || vendor == 0x0000)
++		if (ret || vendor == 0xffff || vendor == 0x0000) {
++			if (CONFIG_IS_ENABLED(PCIE_ENUM_DEBUG) && PCI_FUNC(bdf) == 0)
++				printf("pci-enum:   %02x:%02x.%d: empty\n",
++				       PCI_BUS(bdf), PCI_DEV(bdf), PCI_FUNC(bdf));
+ 			continue;
++		}
+ 
+ 		pci_bus_read_config(bus, bdf, PCI_HEADER_TYPE,
+ 				    &header_type, PCI_SIZE_8);
+@@ -978,6 +985,18 @@ int pci_bind_bus_devices(struct udevice *bus)
+ 		}
+ 
+ 		board_pci_fixup_dev(bus, dev);
++		if (CONFIG_IS_ENABLED(PCIE_ENUM_DEBUG))
++			printf("pci-enum:   %02x:%02x.%d: Vend=0x%04x Dev=0x%04x class=0x%06lx\n",
++			       PCI_BUS(bdf), PCI_DEV(bdf), PCI_FUNC(bdf),
++			       vendor, device, class);
++	}
++
++	if (CONFIG_IS_ENABLED(PCIE_ENUM_DEBUG)) {
++		int cnt = 0;
++		struct udevice *c;
++		device_find_first_child(bus, &c);
++		while (c) { cnt++; device_find_next_child(&c); }
++		printf("pci-enum: [24] bind done: %d device(s)\n", cnt);
+ 	}
+ 
+ 	return 0;
+diff --git a/drivers/pci/pci_auto.c b/drivers/pci/pci_auto.c
+index 4a1c782be36..15e821195b9 100644
+--- a/drivers/pci/pci_auto.c
++++ b/drivers/pci/pci_auto.c
+@@ -16,6 +16,15 @@
+ #include <time.h>
+ #include "pci_internal.h"
+ 
++#define aut_enum(fmt, ...)						\
++	do {								\
++		if (CONFIG_IS_ENABLED(PCIE_ENUM_DEBUG))		\
++			printf("pci-enum: " fmt, ##__VA_ARGS__);	\
++	} while (0)
++
++#define aut_enum_step(n, fmt, ...)					   \
++	aut_enum("[%2d] " fmt, n, ##__VA_ARGS__)
++
+ /* the user can define CFG_SYS_PCI_CACHE_LINE_SIZE to avoid problems */
+ #ifndef CFG_SYS_PCI_CACHE_LINE_SIZE
+ #define CFG_SYS_PCI_CACHE_LINE_SIZE	8
+@@ -62,6 +71,10 @@ static void dm_pciauto_setup_device(struct udevice *dev,
+ 		break;
+ 	}
+ 
++	aut_enum_step(33, "%02x:%02x.%d: BAR sizing (%d BARs)\n",
++		      PCI_BUS(dm_pci_get_bdf(dev)), PCI_DEV(dm_pci_get_bdf(dev)),
++		      PCI_FUNC(dm_pci_get_bdf(dev)), bars_num);
++
+ 	for (bar = PCI_BASE_ADDRESS_0;
+ 	     bar < PCI_BASE_ADDRESS_0 + (bars_num * 4); bar += 4) {
+ 		int ret = 0;
+@@ -71,8 +84,11 @@ static void dm_pciauto_setup_device(struct udevice *dev,
+ 		dm_pci_read_config32(dev, bar, &bar_response);
+ 
+ 		/* If BAR is not implemented (or invalid) go to the next BAR */
+-		if (!bar_response || bar_response == 0xffffffff)
++		if (!bar_response || bar_response == 0xffffffff) {
++			aut_enum("    BAR%d: unimplemented\n", bar_nr);
++			bar_nr++;
+ 			continue;
++		}
+ 
+ 		found_mem64 = 0;
+ 
+@@ -83,6 +99,7 @@ static void dm_pciauto_setup_device(struct udevice *dev,
+ 
+ 			bar_res = io;
+ 
++			aut_enum("    BAR%d: I/O  size=0x%llx -> ", bar_nr, (unsigned long long)bar_size);
+ 			debug("PCI Autoconfig: BAR %d, I/O, size=0x%llx, ",
+ 			      bar_nr, (unsigned long long)bar_size);
+ 		} else {
+@@ -113,6 +130,11 @@ static void dm_pciauto_setup_device(struct udevice *dev,
+ 			else
+ 				bar_res = mem;
+ 
++			aut_enum("    BAR%d: %s%s size=0x%llx -> ",
++				 bar_nr,
++				 bar_res == prefetch ? "Prf" : "Mem",
++				 found_mem64 ? "64" : "32",
++				 (unsigned long long)bar_size);
+ 			debug("PCI Autoconfig: BAR %d, %s%s, size=0x%llx, ",
+ 			      bar_nr, bar_res == prefetch ? "Prf" : "Mem",
+ 			      found_mem64 ? "64" : "",
+@@ -121,8 +143,11 @@ static void dm_pciauto_setup_device(struct udevice *dev,
+ 
+ 		ret = pciauto_region_allocate(bar_res, bar_size,
+ 					      &bar_value, found_mem64);
+-		if (ret)
++		if (ret) {
+ 			printf("PCI: Failed autoconfig bar %x\n", bar);
++			aut_enum("FAIL\n");
++		} else {
++			aut_enum("0x%llx\n", (unsigned long long)bar_value);
+ 
+ 		if (!ret) {
+ 			/* Write it out and update our limit */
+@@ -348,6 +373,10 @@ static void dm_pciauto_exp_fixup_link(struct udevice *dev, int pcie_off)
+ void dm_pciauto_prescan_setup_bridge(struct udevice *dev, int sub_bus)
+ {
+ 	struct pci_region *pci_mem;
++
++	aut_enum_step(37, "bridge %02x:%02x.%d: prescan (sub=%d)\n",
++		      PCI_BUS(dm_pci_get_bdf(dev)), PCI_DEV(dm_pci_get_bdf(dev)),
++		      PCI_FUNC(dm_pci_get_bdf(dev)), sub_bus);
+ 	struct pci_region *pci_prefetch;
+ 	struct pci_region *pci_io;
+ 	u16 cmdstat, prefechable_64;
+@@ -454,6 +483,10 @@ void dm_pciauto_postscan_setup_bridge(struct udevice *dev, int sub_bus)
+ {
+ 	struct pci_region *pci_mem;
+ 	struct pci_region *pci_prefetch;
++
++	aut_enum_step(38, "bridge %02x:%02x.%d: postscan (sub=%d)\n",
++		      PCI_BUS(dm_pci_get_bdf(dev)), PCI_DEV(dm_pci_get_bdf(dev)),
++		      PCI_FUNC(dm_pci_get_bdf(dev)), sub_bus);
+ 	struct pci_region *pci_io;
+ 	struct udevice *ctlr = pci_get_controller(dev);
+ 	struct pci_controller *ctlr_hose = dev_get_uclass_priv(ctlr);
+@@ -536,6 +569,10 @@ int dm_pciauto_config_device(struct udevice *dev)
+ 
+ 	dm_pci_read_config16(dev, PCI_CLASS_DEVICE, &class);
+ 
++	aut_enum_step(34, "%02x:%02x.%d: autoconfig class=0x%04x\n",
++		      PCI_BUS(dm_pci_get_bdf(dev)), PCI_DEV(dm_pci_get_bdf(dev)),
++		      PCI_FUNC(dm_pci_get_bdf(dev)), class);
++
+ 	switch (class) {
+ 	case PCI_CLASS_BRIDGE_PCI:
+ 		debug("PCI Autoconfig: Found P2P bridge, device %d\n",
+diff --git a/drivers/pci/pcie_dw_common.c b/drivers/pci/pcie_dw_common.c
+index 4113a9f03cf..46174a4d8ab 100644
+--- a/drivers/pci/pcie_dw_common.c
++++ b/drivers/pci/pcie_dw_common.c
+@@ -16,6 +16,15 @@
+ #include <linux/delay.h>
+ #include "pcie_dw_common.h"
+ 
++#define dwe_enum(fmt, ...)						\
++	do {								\
++		if (CONFIG_IS_ENABLED(PCIE_DW_SIFIVE_DEBUG))		\
++			printf("pci-enum: " fmt, ##__VA_ARGS__);	\
++	} while (0)
++
++#define dwe_enum_step(n, fmt, ...)					   \
++	dwe_enum("[%2d] " fmt, n, ##__VA_ARGS__)
++
+ int pcie_dw_get_link_speed(struct pcie_dw *pci)
+ {
+ 	return (readl(pci->dbi_base + PCIE_LINK_STATUS_REG) &
+@@ -364,6 +373,8 @@ u8 pcie_dw_find_capability(struct pcie_dw *pci, u8 cap)
+ void pcie_dw_setup_host(struct pcie_dw *pci)
+ {
+ 	struct udevice *ctlr = pci_get_controller(pci->dev);
++
++	dwe_enum_step(22, "setup_host: configure DBI\n");
+ 	struct pci_controller *hose = dev_get_uclass_priv(ctlr);
+ 	u32 ret;
+ 
+@@ -371,13 +382,16 @@ void pcie_dw_setup_host(struct pcie_dw *pci)
+ 		pci->atu_base = pci->dbi_base + DEFAULT_DBI_ATU_OFFSET;
+ 
+ 	/* setup RC BARs */
++	dwe_enum("  DBI BAR0 = 0x%08x (64-bit MEM)\n", PCI_BASE_ADDRESS_MEM_TYPE_64);
+ 	writel(PCI_BASE_ADDRESS_MEM_TYPE_64,
+ 	       pci->dbi_base + PCI_BASE_ADDRESS_0);
++	dwe_enum("  DBI BAR1 = 0x00000000\n");
+ 	writel(0x0, pci->dbi_base + PCI_BASE_ADDRESS_1);
+ 
+ 	/* setup interrupt pins */
+ 	clrsetbits_le32(pci->dbi_base + PCI_INTERRUPT_LINE,
+ 			0xff00, 0x100);
++	dwe_enum("  DBI INT_LINE = 0x00000100 (INTA#)\n");
+ 
+ 	/* setup bus numbers */
+ 	clrsetbits_le32(pci->dbi_base + PCI_PRIMARY_BUS,
+diff --git a/drivers/pci/pcie_dw_sifive.c b/drivers/pci/pcie_dw_sifive.c
+index 6285edf4b03..bd4317769bb 100644
+--- a/drivers/pci/pcie_dw_sifive.c
++++ b/drivers/pci/pcie_dw_sifive.c
+@@ -63,6 +63,19 @@ enum pcie_sifive_devtype {
+ #define sv_debug(sv, fmt, arg...)	debug(fmt, ## arg)
+ #define sv_err(sv, fmt, arg...)		printf(fmt, ## arg)
+ 
++/* -- Step-by-step bring-up trace (CONFIG_PCIE_DW_SIFIVE_DEBUG) -- */
++#define fu740_trace(fmt, ...)					\
++	do {							\
++		if (CONFIG_IS_ENABLED(PCIE_DW_SIFIVE_DEBUG))	\
++			printf("fu740-pcie: " fmt, ##__VA_ARGS__); \
++	} while (0)
++
++#define fu740_trace_step(n, fmt, ...)					\
++	do {								\
++		if (CONFIG_IS_ENABLED(PCIE_DW_SIFIVE_DEBUG))		\
++			printf("fu740-pcie: [Step %2d] " fmt, n, ##__VA_ARGS__); \
++	} while (0)
++
+ /* Doorbell Interface */
+ #define DBI_OFFSET			0x0
+ #define DBI_SIZE			0x1000

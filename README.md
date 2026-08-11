@@ -162,6 +162,18 @@ Build individual components:
 ./build.sh rootfs           # BusyBox rootfs
 ```
 
+For iterative driver work, dev targets preserve local source edits:
+
+```bash
+./build.sh dev-linux         # Incremental Linux build; edits in src/linux/ survive
+./build.sh dev-uboot         # Incremental U-Boot build; edits in src/u-boot/ survive
+```
+
+**WARNING:** A plain `./build.sh` (or `./build.sh linux` / `./build.sh u-boot`)
+runs `git reset --hard` + `git clean`, discarding uncommitted work. Export
+experiments with `git -C src/linux diff` (or `src/u-boot`) before returning
+to reproducible mode.
+
 Build the whole boot chain:
 
 ```bash

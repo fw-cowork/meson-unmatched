@@ -17,8 +17,12 @@ Without arguments, builds the Unmatched physical-board GPT SD image.
 Pass qemu to build the separate QEMU OpenSBI/U-Boot/Linux image.
 
 Common targets:
-  check, fetch-sources, opensbi-fw, u-boot, linux, dev-linux, busybox, rootfs,
-  bootchain, sd-image, qemu-image, clean-lite
+  check, fetch-sources, opensbi-fw, u-boot, linux, dev-linux, dev-uboot,
+  busybox, rootfs, bootchain, sd-image, qemu-image, clean-lite
+
+Dev targets (preserve source edits + .config for iteration):
+  dev-linux    Incremental Linux build keeping src/linux/ modifications
+  dev-uboot    Incremental U-Boot build keeping src/u-boot/ modifications
 
 Examples:
   ./build.sh toolchain  Download and install the pinned SiFive Linux SDK

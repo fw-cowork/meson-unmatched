@@ -1,5 +1,11 @@
 # Documentation Index
 
+## Getting Started
+
+| File | Description |
+|---|---|
+| [learning-plan.md](learning-plan.md) | Structured 5-phase learning plan for the project |
+
 ## Architecture & Design
 
 Framework design, specification, and repository structure documentation.
@@ -24,8 +30,18 @@ Boot chain analysis — ZSBL → SPL → OpenSBI → U-Boot → Linux.
 
 | File | Description |
 |---|---|
+| [boot-chain-overview.md](boot/boot-chain-overview.md) | Complete boot chain synthesis: all five stages in one document |
 | [spl-analysis.md](boot/spl-analysis.md) | U-Boot SPL code analysis and compilation |
+| [opensbi-on-unmatched.md](boot/opensbi-on-unmatched.md) | OpenSBI role, fw_dynamic protocol, and platform integration |
 | [uboot-boot-log.md](boot/uboot-boot-log.md) | U-Boot proper boot log analysis: PCIe, USB, extlinux, kernel decompress & relocation |
+
+## Linux Kernel
+
+Linux kernel perspective — config, device tree, drivers, and development workflow.
+
+| File | Description |
+|---|---|
+| [linux-on-unmatched.md](linux/linux-on-unmatched.md) | Linux kernel config, DTS, PCIe driver hierarchy, BusyBox rootfs, dev workflow |
 
 ## PCIe
 
@@ -35,6 +51,7 @@ PCIe subsystem study notes on the HiFive Unmatched.
 |---|---|
 | [pcie-learning.md](pcie/pcie-learning.md) | PCIe learning roadmap |
 | [pcie-study.md](pcie/pcie-study.md) | PCIe study notes (from unmatched docs) |
+| [pcie-resources.md](pcie/pcie-resources.md) | **PCIe learning resources** — books, tutorials, specs, FPGA, kernel docs |
 
 ## UML
 
@@ -53,6 +70,12 @@ PlantUML diagrams describing build process, component relationships, and data fl
 | [sd-update-sequence.puml](uml/sd-update-sequence.puml) | SD card update sequence |
 
 ## Reference
+
+Framework reference and official hardware documentation.
+
+| File | Description |
+|---|---|
+| [memory-map.md](reference/memory-map.md) | Complete physical address reference for FU740 and Unmatched |
 
 Official SiFive HiFive Unmatched hardware and software documentation.
 

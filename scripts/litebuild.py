@@ -96,7 +96,9 @@ class Paths:
         self.linux_defconfig = self.repo / "configs/linux/unmatched_defconfig"
         self.rootfs_overlay = self.repo / "rootfs"
         self.uboot_patch = self.repo / "patches/u-boot/2026.01/0005-riscv-dts-Add-few-PMU-events.patch"
+        self.uboot_patch2 = self.repo / "patches/u-boot/2026.01/0006-pcie-fu740-debug-trace.patch"
         self.linux_patch = self.repo / "patches/linux/6.18/0001-riscv-dts-sifive-unmatched-keep-leds-settings.patch"
+        self.linux_patch2 = self.repo / "patches/linux/6.18/0002-pcie-fu740-debug-trace.patch"
 
 
 class Toolchain:
@@ -112,9 +114,15 @@ def say(msg):
     print(msg, flush=True)
 
 
-def run(cmd, cwd=None, env=None):
+def run(cmd, cwd=None, env=None, quiet=False):
     say("$ " + " ".join(str(c) for c in cmd))
-    subprocess.run([str(c) for c in cmd], cwd=cwd, env=env, check=True)
+    subprocess.run(
+        [str(c) for c in cmd],
+        cwd=cwd,
+        env=env,
+        check=True,
+        stdout=subprocess.DEVNULL if quiet else None,
+    )
 
 
 def touch(path):
@@ -433,7 +441,27 @@ def build_rootfs(paths, env):
         paths.rootfs_image,
         f"{size // 1024}K",
     ], env=env)
+    _set_ext4_root_ownership(paths.rootfs_tree, paths.rootfs_image, env)
     say(f"DEPLOY {paths.rootfs_image}")
+
+
+def _set_ext4_root_ownership(rootfs_tree, rootfs_image, env):
+    commands = ["set_inode_field / uid 0", "set_inode_field / gid 0"]
+    for parent, directories, files in os.walk(rootfs_tree, followlinks=False):
+        parent_path = Path(parent)
+        for name in directories + files:
+            relative = (parent_path / name).relative_to(rootfs_tree)
+            path = "/" + relative.as_posix()
+            commands.append(f"set_inode_field {path} uid 0")
+            commands.append(f"set_inode_field {path} gid 0")
+
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False) as command_file:
+        command_file.write("\n".join(commands) + "\n")
+        command_path = Path(command_file.name)
+    try:
+        run(["debugfs", "-w", "-f", command_path, rootfs_image], env=env, quiet=True)
+    finally:
+        command_path.unlink(missing_ok=True)
 
 
 def _write_cpio_entry(archive, name, mode, data, inode):
@@ -495,10 +523,14 @@ def fetch(paths, only=None, dev=False):
             git_checkout(paths, key, paths.uboot_src, dev=dev)
             if paths.profile == "unmatched":
                 apply_patch_once(paths.uboot_src, paths.uboot_patch)
+                if paths.uboot_patch2.exists():
+                    apply_patch_once(paths.uboot_src, paths.uboot_patch2)
         elif key == "linux":
             git_checkout(paths, key, paths.linux_src, dev=dev)
             if paths.profile == "unmatched":
                 apply_patch_once(paths.linux_src, paths.linux_patch)
+            if paths.linux_patch2.exists():
+                apply_patch_once(paths.linux_src, paths.linux_patch2)
         else:
             raise SystemExit(f"Unknown source key: {key}")
 
@@ -543,8 +575,8 @@ def _uboot_make_base(paths, env, output):
     ]
 
 
-def build_uboot(paths, env):
-    fetch(paths, ("u-boot",))
+def build_uboot(paths, env, dev=False):
+    fetch(paths, ("u-boot",), dev=dev)
     require_tools(["make", "bc", "bison", "flex"], env)
     require_cross(env)
 
@@ -559,7 +591,16 @@ def build_uboot(paths, env):
 
     if not (paths.deploy / "fw_dynamic.bin").exists():
         build_opensbi(paths, env)
-    run(make_base + ["sifive_unmatched_defconfig"], env=env)
+
+    config_dot = paths.uboot_out / ".config"
+    if dev and config_dot.exists():
+        say(f"DEV preserve existing U-Boot .config: {config_dot}")
+        run(make_base + ["olddefconfig"], env=env)
+    else:
+        run(make_base + ["sifive_unmatched_defconfig"], env=env)
+        _set_config_option(config_dot, "CONFIG_BOOTDELAY", "5")
+        run(make_base + ["olddefconfig"], env=env)
+
     run(make_base + ["-j", jobs(), f"OPENSBI={paths.deploy / 'fw_dynamic.bin'}"], env=env)
 
     copy_artifact(paths.uboot_out / "spl/u-boot-spl.bin", paths.deploy / "u-boot-spl.bin")
@@ -596,6 +637,10 @@ def build_linux(paths, env, dev=False):
     if paths.profile == "qemu":
         if os.environ.get("UNMATCHED_LITE_KEEP_CONFIG") != "1":
             run(make_base + ["defconfig"], env=env)
+            dot_config = paths.linux_out / ".config"
+            with dot_config.open("a") as f:
+                f.write("CONFIG_PCIE_ENUM_DEBUG=y\n")
+            run(make_base + ["olddefconfig"], env=env)
         else:
             run(make_base + ["olddefconfig"], env=env)
         run(make_base + ["-j", jobs(), "Image.gz"], env=env)
@@ -641,7 +686,7 @@ LABEL unmatched
 def _qemu_boot_cmd():
     return """setenv fit_addr 0x84000000
 fatload virtio 0:1 ${fit_addr} fit.itb
-setenv bootargs console=ttyS0 earlycon=sbi
+setenv bootargs console=ttyS0 earlycon=sbi loglevel=8
 bootm ${fit_addr}#qemu
 """
 
@@ -883,11 +928,15 @@ def print_info(paths, env):
 
 def check(paths, env):
     print_info(paths, env)
-    require_tools(["git", "make", "bc", "bison", "flex", "mke2fs", "sgdisk", "openssl"], env)
+    require_tools(["git", "make", "bc", "bison", "flex", "mke2fs", "debugfs", "sgdisk", "openssl"], env)
     require_cross(env)
     inputs = [paths.rootfs_overlay]
     if paths.profile == "unmatched":
         inputs += [paths.uboot_patch, paths.linux_patch, paths.linux_defconfig]
+        if paths.uboot_patch2.exists():
+            inputs.append(paths.uboot_patch2)
+        if paths.linux_patch2.exists():
+            inputs.append(paths.linux_patch2)
     for path in inputs:
         if not path.exists():
             raise SystemExit(f"Missing repository input: {path}")
@@ -906,7 +955,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=[
         "info", "check", "fetch", "opensbi", "u-boot", "qemu-u-boot", "linux", "busybox", "rootfs",
-        "bootchain", "sd-image", "qemu-image", "dev-linux", "clean", "stamp",
+        "bootchain", "sd-image", "qemu-image", "dev-linux", "dev-uboot", "clean", "stamp",
     ])
     parser.add_argument("--profile", choices=["unmatched", "qemu"], default="unmatched")
     parser.add_argument("--cross-compile", default="")
@@ -937,6 +986,8 @@ def main():
         build_linux(paths, env)
     elif args.command == "dev-linux":
         build_linux(paths, env, dev=True)
+    elif args.command == "dev-uboot":
+        build_uboot(paths, env, dev=True)
     elif args.command == "busybox":
         build_busybox(paths, env)
     elif args.command == "rootfs":
