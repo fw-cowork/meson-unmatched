@@ -83,7 +83,7 @@ index c370f8c6400..03cd5e7bab7 100644
  
  	return 0;
 diff --git a/drivers/pci/pci_auto.c b/drivers/pci/pci_auto.c
-index 4a1c782be36..15e821195b9 100644
+index 4a1c782be36..194cd6b3fb0 100644
 --- a/drivers/pci/pci_auto.c
 +++ b/drivers/pci/pci_auto.c
 @@ -16,6 +16,15 @@
@@ -146,7 +146,7 @@ index 4a1c782be36..15e821195b9 100644
  			debug("PCI Autoconfig: BAR %d, %s%s, size=0x%llx, ",
  			      bar_nr, bar_res == prefetch ? "Prf" : "Mem",
  			      found_mem64 ? "64" : "",
-@@ -121,8 +143,11 @@ static void dm_pciauto_setup_device(struct udevice *dev,
+@@ -121,8 +143,12 @@ static void dm_pciauto_setup_device(struct udevice *dev,
  
  		ret = pciauto_region_allocate(bar_res, bar_size,
  					      &bar_value, found_mem64);
@@ -156,10 +156,11 @@ index 4a1c782be36..15e821195b9 100644
 +			aut_enum("FAIL\n");
 +		} else {
 +			aut_enum("0x%llx\n", (unsigned long long)bar_value);
++		}
  
  		if (!ret) {
  			/* Write it out and update our limit */
-@@ -348,6 +373,10 @@ static void dm_pciauto_exp_fixup_link(struct udevice *dev, int pcie_off)
+@@ -348,6 +374,10 @@ static void dm_pciauto_exp_fixup_link(struct udevice *dev, int pcie_off)
  void dm_pciauto_prescan_setup_bridge(struct udevice *dev, int sub_bus)
  {
  	struct pci_region *pci_mem;
@@ -170,7 +171,7 @@ index 4a1c782be36..15e821195b9 100644
  	struct pci_region *pci_prefetch;
  	struct pci_region *pci_io;
  	u16 cmdstat, prefechable_64;
-@@ -454,6 +483,10 @@ void dm_pciauto_postscan_setup_bridge(struct udevice *dev, int sub_bus)
+@@ -454,6 +484,10 @@ void dm_pciauto_postscan_setup_bridge(struct udevice *dev, int sub_bus)
  {
  	struct pci_region *pci_mem;
  	struct pci_region *pci_prefetch;
@@ -181,7 +182,7 @@ index 4a1c782be36..15e821195b9 100644
  	struct pci_region *pci_io;
  	struct udevice *ctlr = pci_get_controller(dev);
  	struct pci_controller *ctlr_hose = dev_get_uclass_priv(ctlr);
-@@ -536,6 +569,10 @@ int dm_pciauto_config_device(struct udevice *dev)
+@@ -536,6 +570,10 @@ int dm_pciauto_config_device(struct udevice *dev)
  
  	dm_pci_read_config16(dev, PCI_CLASS_DEVICE, &class);
  

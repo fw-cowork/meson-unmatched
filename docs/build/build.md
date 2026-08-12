@@ -20,6 +20,116 @@ cd /home/adrian/devel/riscv/meson-unmatched
 该步骤需要较大的磁盘空间和较长时间。工具链生成完成后，后续普通构建不再依赖
 父目录中的 KAS 工程。
 
+## 构建框架和目录
+
+统一入口是 `build.sh`。它先用 Meson 配置构建目录，再由 Ninja 调用
+`scripts/litebuild.py`；Python 驱动最后调用 OpenSBI、U-Boot、Linux 和
+BusyBox 各自的 Makefile：
+
+```text
+./build.sh <target>
+  -> meson + ninja
+  -> scripts/litebuild.py
+  -> component Makefile
+```
+
+构建过程中各目录的职责如下：
+
+| 路径 | 用途 | 是否提交到本仓库 |
+|---|---|---|
+| `src/linux/` | 固定 Linux revision 的开发工作树 | 否 |
+| `src/u-boot/` | 固定 U-Boot revision 的开发工作树 | 否 |
+| `src/opensbi/` | 固定 OpenSBI revision 的工作树 | 否 |
+| `out/` | `.config`、目标文件和其他中间产物 | 否 |
+| `deploy/` | 可部署的最终产物 | 否 |
+| `patches/` | 在固定上游 revision 上应用的持久化源码改动 | 是 |
+| `configs/` | Linux 等组件的持久化配置 | 是 |
+
+常用构建目标：
+
+```bash
+./build.sh opensbi-fw      # OpenSBI 固件
+./build.sh u-boot          # U-Boot SPL + proper；缺少 OpenSBI 时也会编译它
+./build.sh linux           # Linux Image.gz + Unmatched DTB
+./build.sh fit             # 将已有 Image.gz 和 Unmatched DTB 打包为 FIT
+./build.sh firmware-fit    # 将已有 SPL 和 u-boot.itb 打包为固件更新 FIT
+./build.sh rootfs          # BusyBox rootfs
+./build.sh bootchain       # OpenSBI + U-Boot + Linux
+./build.sh                 # 完整物理板 SD 卡镜像
+```
+
+`deploy/` 中对应的主要产物为：
+
+```text
+fw_dynamic.bin
+u-boot-spl.bin
+u-boot.itb
+unmatched-firmware.itb
+Image.gz
+hifive-unmatched-a00.dtb
+unmatched-fit.itb
+rootfs.ext4
+unmatched-lite.img
+```
+
+### 可复现构建与开发构建
+
+普通目标用于从仓库输入重新产生结果。编译对应组件前，它会将 `src/` 工作树恢复
+到 `scripts/litebuild.py` 固定的上游提交，执行 `git reset --hard` 和
+`git clean -fdx`，再应用 `patches/` 中登记的补丁。以下命令会丢弃对应源码树中
+尚未导出为 patch 的修改：
+
+```bash
+./build.sh linux
+./build.sh u-boot
+./build.sh bootchain
+./build.sh
+./build.sh qemu
+```
+
+修改 Linux 或 U-Boot 源码时使用开发目标：
+
+```bash
+./build.sh dev-linux       # 保留 src/linux/ 和 out/linux/.config
+./build.sh dev-uboot       # 保留 src/u-boot/ 和 out/u-boot/.config
+```
+
+开发目标适合反复编辑、编译和上板验证；验证完成后必须把源码差异整理到
+`patches/`，才能由普通目标稳定复现。执行普通目标前先检查：
+
+```bash
+git -C src/linux status --short
+git -C src/u-boot status --short
+git -C src/opensbi status --short
+```
+
+当前没有 `dev-opensbi` 目标。`./build.sh opensbi-fw` 每次都会恢复
+`src/opensbi/`，因此不要把未保存的 OpenSBI 实验修改交给这个目标。需要修改
+OpenSBI 时，应先为 `scripts/litebuild.py` 增加 OpenSBI patch 和开发模式支持，
+或者先把修改导出到主仓库后再接入构建流程。
+
+### 使用现有 Yocto SDK
+
+推荐先执行 `./build.sh toolchain`，之后始终使用上面的 `build.sh` 入口。当前机器
+尚未在本仓库安装 `toolchains/sifive/`，本次重新编译 `Image.gz` 时临时复用了
+`/home/adrian/devel/riscv/unmatched/sifiveinc-2026.01` 中已有的 Yocto SDK：
+
+```bash
+sdk=/home/adrian/devel/riscv/unmatched/sifiveinc-2026.01/build/tmp/work/\
+unmatched-freedomusdk-linux/linux-sifive/6.18.3+git
+
+python3 scripts/litebuild.py dev-linux \
+  --cross-compile riscv64-freedomusdk-linux- \
+  --sysroot "$sdk/recipe-sysroot" \
+  --toolchain-bindir \
+    "$sdk/recipe-sysroot-native/usr/bin/riscv64-freedomusdk-linux" \
+  --native-bindir "$sdk/recipe-sysroot-native/usr/bin" \
+  --native-sysroot "$sdk/recipe-sysroot-native"
+```
+
+该命令与 `./build.sh dev-linux` 一样保留当前 Linux 源码和 `.config`，只是显式
+传入了工具链路径。路径依赖本机 Yocto 工作目录，不应作为长期构建接口。
+
 ## Unmatched 物理板
 
 不带参数时构建物理板 SD 卡镜像：
@@ -40,40 +150,159 @@ deploy/unmatched-lite.img
 U-Boot SPL -> OpenSBI FW_DYNAMIC -> U-Boot -> Linux Image.gz + DTB -> BusyBox rootfs
 ```
 
-### Linux 开发模式
+### U-Boot TFTP 启动与 OpenSBI 打印
 
-学习 PCIe 驱动或 host controller 时，使用 `dev-linux` 保留 Linux 工作树和
-内核配置：
+完整操作流程和故障排查见 [U-Boot TFTP 启动](../boot/tftp-boot.md)。
+
+Unmatched 构建把 `CONFIG_SPL_OPENSBI_SCRATCH_OPTIONS` 设置为 `0x2`。SPL 因此
+不会再要求 OpenSBI 隐藏启动信息，并会打开 OpenSBI 的 runtime debug prints。
+这不同于 OpenSBI 的 `DEBUG=1`：后者关闭编译优化，用于源码调试，并不是日志
+开关。
+
+U-Boot 默认环境提供 `tftp_boot`，通过 TFTP 一次加载包含内核和 DTB 的 FIT，
+rootfs 仍使用 SD 卡第 4 分区。先构建并将 FIT 放进 TFTP server root：
+
+```bash
+./build.sh bootchain
+cp deploy/unmatched-fit.itb /srv/tftp/
+```
+
+烧写本次生成的 SD 镜像后，在 U-Boot 命令行执行：
+
+```text
+=> run tftp_boot
+```
+
+默认静态网络参数如下：
+
+```text
+serverip=192.168.1.23
+ipaddr=192.168.1.24
+netmask=255.255.255.0
+```
+
+`ipaddr` 是 Unmatched 板卡地址，`serverip` 是 TFTP 服务器地址。`tftp_boot`
+不使用 DHCP；它把 `unmatched-fit.itb` 一次加载到 `${fit_addr_r}`，设置启动参数，
+最后执行：
+
+```text
+bootm ${fit_addr_r}#unmatched
+```
+
+FIT 内的 kernel 节点把压缩内核加载和入口地址设为 `0x80200000`，fdt 节点携带
+`hifive-unmatched-a00.dtb`。FIT 自身加载到 `0x84000000`，不会与解压后的内核
+重叠。kernel 和 fdt 都带 SHA-256 hash，由 U-Boot 在启动时校验。
+
+每次 `./build.sh u-boot` 或 `./build.sh dev-uboot` 完成后，还会自动生成：
+
+```text
+deploy/unmatched-firmware.itb
+```
+
+它把补齐到 512 字节边界的 `u-boot-spl.bin`、包含 OpenSBI 的 `u-boot.itb` 和板端
+更新脚本打包在一起，三个节点分别带 SHA-256。已有 U-Boot 产物时也可只重新打包：
+
+```bash
+./build.sh firmware-fit
+```
+
+板端使用方法、GPT 校验、回读验证和断电恢复见
+[U-Boot TFTP 启动](../boot/tftp-boot.md)。
+
+默认启动参数是：
+
+```text
+root=/dev/mmcblk0p4 rw rootwait console=ttySIF0,115200 earlycon=sbi loglevel=8
+```
+
+需要排查自动命令时，可以手工执行同样的 TFTP 启动步骤：
+
+```text
+=> setenv serverip 192.168.1.23
+=> setenv ipaddr 192.168.1.24
+=> setenv netmask 255.255.255.0
+=> setenv fit_addr_r 0x84000000
+=> tftpboot ${fit_addr_r} unmatched-fit.itb
+=> setenv bootargs root=/dev/mmcblk0p4 rw rootwait console=ttySIF0,115200 earlycon=sbi loglevel=8
+=> bootm ${fit_addr_r}#unmatched
+```
+
+如果 SPI Flash 中已有持久化的旧 U-Boot environment，新加入的默认变量可能不
+会自动出现。可只恢复这些变量，不影响其他自定义项：
+
+```text
+=> env default fit_addr_r ipaddr serverip netmask tftp_boot tftp_fit tftp_bootargs firmware_addr_r firmware_fit tftp_update_firmware
+```
+
+OpenSBI 打印发生在进入 U-Boot proper 之前，所以只替换 TFTP 目录中的 Linux
+FIT 不会改变 OpenSBI 输出；应使用 `unmatched-firmware.itb` 更新卡上的 SPL 和
+`u-boot.itb`，或重新烧写完整 SD 镜像。
+
+### 修改 Linux
+
+首次进入开发模式时先构建一次，然后修改 `src/linux/` 下的源码。例如修改
+FU740 PCIe 驱动和 PCI 枚举核心：
 
 ```bash
 ./build.sh dev-linux
-# 修改 src/linux/ 中的 Linux 源码
+
+vim src/linux/drivers/pci/controller/dwc/pcie-fu740.c
+vim src/linux/drivers/pci/probe.c
+
 ./build.sh dev-linux
 ```
 
 首次调用会获取固定 Linux revision 并应用仓库已有的 Unmatched 补丁。之后
 `dev-linux` 不会执行 `git reset --hard` 或 `git clean`，因此 `src/linux/` 的
-修改会保留；它也不会覆盖 `out/linux/.config`。
+修改会保留；它也不会覆盖 `out/linux/.config`。构建成功后更新：
 
-不要在保留实验修改期间执行普通 `./build.sh`、`./build.sh linux` 或
-`./build.sh qemu`，这些可复现构建目标会重置对应源码树。完成实验后，将你改动
-的文件导出为 patch：
-
-```bash
-git -C src/linux diff -- drivers/pci/ > patches/linux/0002-pcie-learning.patch
+```text
+deploy/Image.gz
+deploy/hifive-unmatched-a00.dtb
 ```
 
-导出时只指定自己修改的路径。若改动与已有 `0001` 补丁修改同一个文件，需要先
-人工检查生成的 diff，避免把已有补丁的内容重复写入新 patch。
+使用 TFTP 启动时，`dev-linux` 会在 U-Boot `mkimage` 已存在时同步刷新 FIT。将
+这个文件更新到服务器即可：
 
-### U-Boot 开发模式
+```bash
+sudo cp deploy/unmatched-fit.itb /srv/tftp/
+```
 
-学习 SPL、PCIe bridge 复位或 U-Boot 驱动时，使用 `dev-uboot` 保留
-U-Boot 工作树和 `.config`：
+不要在保留实验修改期间执行普通 `./build.sh`、`./build.sh linux` 或
+`./build.sh qemu`，这些可复现构建目标会重置对应源码树。
+
+`dev-linux` 应用仓库补丁时不会在 `src/linux/` 中创建提交，因此 `git diff`
+同时包含已有补丁和后续实验修改。若修改的是已有 `0002` 覆盖的 PCIe 文件，应
+重新生成 `0002`，而不是创建一个与它内容重叠的 `0003`：
+
+```bash
+git -C src/linux diff -- \
+  drivers/pci/Kconfig \
+  drivers/pci/controller/dwc/Kconfig \
+  drivers/pci/controller/dwc/pcie-fu740.c \
+  drivers/pci/probe.c \
+  > patches/linux/6.18/0002-pcie-fu740-debug-trace.patch
+```
+
+若修改的是任何现有补丁都没有覆盖的新文件，可以只对新文件生成下一编号的补丁，
+再在 `scripts/litebuild.py` 的 `fetch()` 和 `check()` 中登记。无论采用哪种方式，
+都应先检查主仓库中的 patch diff，再用普通 `./build.sh linux` 验证它能从固定
+revision 干净应用并完成编译。
+
+修改内核配置时先编辑 `out/linux/.config`，使用 `dev-linux` 验证。确认后把需要
+长期保留的选项同步到 `configs/linux/unmatched_defconfig`，否则普通构建会恢复
+仓库 defconfig。
+
+### 修改 U-Boot
+
+首次进入开发模式时先构建一次，再修改 `src/u-boot/`。例如：
 
 ```bash
 ./build.sh dev-uboot
-# 修改 src/u-boot/ 中的 U-Boot 源码（如 drivers/pci/pcie_dw_sifive.c）
+
+vim src/u-boot/drivers/pci/pcie_dw_sifive.c
+vim src/u-boot/board/sifive/unmatched/unmatched.env
+
 ./build.sh dev-uboot
 ```
 
@@ -86,28 +315,60 @@ U-Boot 工作树和 `.config`：
 
 ```bash
 ./build.sh dev-uboot         # 只重编 U-Boot
-./build.sh dev-linux          # 只重编 Linux 内核
-./build.sh                     # 完整重建 SD 镜像（会重置两者）
+./build.sh dev-linux         # 只重编 Linux 内核
 ```
 
-完成实验后导出 U-Boot patch：
+构建成功后更新：
+
+```text
+deploy/u-boot-spl.bin
+deploy/u-boot.itb
+```
+
+U-Boot 工作树同样同时包含仓库补丁和实验修改。若继续修改 PCIe 代码，应把
+`0006` 原来覆盖的全部文件重新导出到原补丁：
 
 ```bash
-git -C src/u-boot diff -- drivers/pci/ > patches/u-boot/2026.01/0006-pcie-debug.patch
+git -C src/u-boot diff -- \
+  drivers/pci/Kconfig \
+  drivers/pci/pci-uclass.c \
+  drivers/pci/pci_auto.c \
+  drivers/pci/pcie_dw_common.c \
+  drivers/pci/pcie_dw_sifive.c \
+  > patches/u-boot/2026.01/0006-pcie-fu740-debug-trace.patch
 ```
+
+若修改默认 TFTP 环境或 OpenSBI scratch options，则重新生成 `0007`：
+
+```bash
+git -C src/u-boot diff -- \
+  board/sifive/unmatched/unmatched.env \
+  configs/sifive_unmatched_defconfig \
+  > patches/u-boot/2026.01/0007-unmatched-tftp-and-opensbi-prints.patch
+```
+
+只有修改旧补丁没有覆盖的新文件时，才创建下一编号的补丁并在
+`scripts/litebuild.py` 中登记。归档后用普通 `./build.sh u-boot` 验证干净构建。
+修改 U-Boot 配置时先编辑 `out/u-boot/.config` 并用 `dev-uboot` 验证，最终把
+选项写入 U-Boot defconfig patch 或由构建脚本显式设置。
 
 **部署 U-Boot 到物理板：** 与 Linux 不同，U-Boot SPL 和 ITB 存放在 SD 卡的
-raw GPT 分区中，不能用文件系统方式替换。最简单的方式是用 `dev-uboot` 重编后
-再跑一次 `./build.sh` 生成完整镜像烧写，或者直接 dd 覆盖 raw 分区：
+raw GPT 分区中，不能通过 TFTP 或 boot 文件系统替换。开发阶段可以把两个文件
+直接写入已卸载 SD 卡的对应分区：
 
 ```bash
-# 仅替换 boot 分区（extlinux + Image.gz + DTB）
-sudo mount /dev/sdX3 /mnt/sdcard
-sudo cp deploy/Image.gz /mnt/sdcard/
-sudo cp deploy/hifive-unmatched-a00.dtb /mnt/sdcard/
-sudo umount /mnt/sdcard
+lsblk -o NAME,SIZE,TYPE,MOUNTPOINTS
+sudo dd if=deploy/u-boot-spl.bin of=/dev/sdX1 bs=1M conv=fsync
+sudo dd if=deploy/u-boot.itb of=/dev/sdX2 bs=1M conv=fsync
+```
 
-# 或完整烧写新镜像
+`/dev/sdX1` 和 `/dev/sdX2` 必须是目标 SD 卡的 SPL、U-Boot 分区，执行前必须用
+`lsblk` 核对，且不能处于挂载状态。写错设备会破坏其他磁盘。
+
+将修改导出并接入 patch 流程后，才使用普通目标生成可复现的完整镜像：
+
+```bash
+./build.sh
 sudo dd if=deploy/unmatched-lite.img of=/dev/sdX bs=4M status=progress
 ```
 
@@ -301,8 +562,9 @@ OpenSBI FW_DYNAMIC -> QEMU S-mode U-Boot -> boot.scr -> FIT -> Linux -> BusyBox
 ### FIT 格式
 
 FIT 是 Flattened Image Tree。它将多个启动组件和它们的元数据放入单个
-`fit.itb` 文件中。当前仓库只有 QEMU profile 使用 FIT；物理 Unmatched 镜像仍
-使用独立的 `Image.gz`、DTB、extlinux 配置和 ext4 rootfs 分区。
+`fit.itb` 文件中。QEMU 使用 `deploy/qemu/fit.itb`；物理 Unmatched 的 TFTP
+流程使用 `deploy/unmatched-fit.itb`。物理板 SD boot 分区仍保留独立的
+`Image.gz`、DTB 和 extlinux 配置。
 
 QEMU 构建会生成 `out/qemu/fit.its`，再使用本次构建的 U-Boot `mkimage` 工具
 生成 `deploy/qemu/fit.itb`。FIT 的默认配置名为 `qemu`，包含：

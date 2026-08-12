@@ -31,6 +31,7 @@ Boot chain analysis — ZSBL → SPL → OpenSBI → U-Boot → Linux.
 | File | Description |
 |---|---|
 | [boot-chain-overview.md](boot/boot-chain-overview.md) | Complete boot chain synthesis: all five stages in one document |
+| [tftp-boot.md](boot/tftp-boot.md) | Static-IP Linux boot and SPL/OpenSBI/U-Boot TFTP update flow |
 | [spl-analysis.md](boot/spl-analysis.md) | U-Boot SPL code analysis and compilation |
 | [opensbi-on-unmatched.md](boot/opensbi-on-unmatched.md) | OpenSBI role, fw_dynamic protocol, and platform integration |
 | [uboot-boot-log.md](boot/uboot-boot-log.md) | U-Boot proper boot log analysis: PCIe, USB, extlinux, kernel decompress & relocation |

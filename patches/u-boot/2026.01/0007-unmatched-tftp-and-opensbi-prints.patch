@@ -1,0 +1,60 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: meson-unmatched <noreply@example.com>
+Date: Wed, 12 Aug 2026 00:00:00 +0800
+Subject: [PATCH] unmatched: add TFTP boot and firmware update
+
+Add a board environment command with static ipaddr, serverip, and netmask
+defaults. Load one FIT containing Image.gz and the board DTB from TFTP, then
+boot with the SD-card root filesystem. Pass OpenSBI scratch option 0x2 so boot
+prints are no longer suppressed and runtime debug prints are enabled.
+
+Add a second TFTP command that downloads and executes a verified firmware FIT
+script for updating SPL and the U-Boot FIT containing OpenSBI.
+---
+ board/sifive/unmatched/unmatched.env | 18 ++++++++++++++++++
+ configs/sifive_unmatched_defconfig   |  1 +
+ 2 files changed, 19 insertions(+)
+
+diff --git a/board/sifive/unmatched/unmatched.env b/board/sifive/unmatched/unmatched.env
+index 34425dc9efa2..90805a446856 100644
+--- a/board/sifive/unmatched/unmatched.env
++++ b/board/sifive/unmatched/unmatched.env
+@@ -9,6 +9,24 @@ fdt_addr_r=0x8c000000
+ scriptaddr=0x8c100000
+ pxefile_addr_r=0x8c200000
+ ramdisk_addr_r=0x8c300000
++fit_addr_r=0x84000000
++serverip=192.168.1.23
++ipaddr=192.168.1.24
++netmask=255.255.255.0
++tftp_fit=unmatched-fit.itb
++tftp_bootargs=root=/dev/mmcblk0p4 rw rootwait console=ttySIF0,115200 earlycon=sbi loglevel=8
++tftp_boot=
++    if tftpboot ${fit_addr_r} ${tftp_fit}; then
++        setenv bootargs ${tftp_bootargs};
++        bootm ${fit_addr_r}#unmatched;
++    fi
++firmware_fit=unmatched-firmware.itb
++firmware_addr_r=0x84000000
++tftp_update_firmware=
++    echo WARNING: updating SPL, OpenSBI, and U-Boot on MMC 0 &&
++    tftpboot ${firmware_addr_r} ${firmware_fit} &&
++    setenv verify yes &&
++    source ${firmware_addr_r}#unmatched
+ type_guid_gpt_loader1=5B193300-FC78-40CD-8002-E86C45580B47
+ type_guid_gpt_loader2=2E54B353-1271-4842-806F-E436D6AF6985
+ type_guid_gpt_system=0FC63DAF-8483-4772-8E79-3D69D8477DE4
+diff --git a/configs/sifive_unmatched_defconfig b/configs/sifive_unmatched_defconfig
+index 0a736f2ba95d..e02aed391a1b 100644
+--- a/configs/sifive_unmatched_defconfig
++++ b/configs/sifive_unmatched_defconfig
+@@ -27,6 +27,7 @@ CONFIG_SPL_LOAD_FIT_ADDRESS=0x84000000
+ CONFIG_BOOTSTD_DEFAULTS=y
+ CONFIG_USE_PREBOOT=y
+ CONFIG_PREBOOT="setenv fdt_addr ${fdtcontroladdr};fdt addr ${fdtcontroladdr};nvme scan"
++CONFIG_SPL_OPENSBI_SCRATCH_OPTIONS=0x2
+ CONFIG_DEFAULT_FDT_FILE="sifive/hifive-unmatched-a00.dtb"
+ CONFIG_SYS_CBSIZE=256
+ CONFIG_SYS_PBSIZE=276
+--
+2.43.0

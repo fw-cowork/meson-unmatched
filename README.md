@@ -159,6 +159,8 @@ Build individual components:
 ./build.sh opensbi-fw      # OpenSBI firmware
 ./build.sh u-boot           # U-Boot SPL + proper (also builds OpenSBI)
 ./build.sh linux            # Linux kernel
+./build.sh fit              # package the current Image.gz + Unmatched DTB
+./build.sh firmware-fit     # package SPL + OpenSBI/U-Boot for TFTP update
 ./build.sh rootfs           # BusyBox rootfs
 ```
 
@@ -179,6 +181,30 @@ Build the whole boot chain:
 ```bash
 ./build.sh bootchain
 ```
+
+The Unmatched U-Boot build includes a `tftp_boot` environment command and
+enables OpenSBI boot/runtime debug prints. Put `deploy/unmatched-fit.itb` in
+the TFTP server root, then run:
+
+```text
+=> run tftp_boot
+```
+
+The default static network settings are `serverip=192.168.1.23`,
+`ipaddr=192.168.1.24`, and `netmask=255.255.255.0`. `tftp_boot` downloads one
+FIT containing `Image.gz` and the board DTB, so the MAC/PHY is started only
+once. It does not use DHCP. Linux boots with the root filesystem on SD
+partition 4. Override `tftp_fit` or `tftp_bootargs` when the server layout or
+root filesystem is different. If an older saved U-Boot environment hides the
+new defaults, load them once with
+`env default fit_addr_r ipaddr serverip netmask tftp_boot tftp_fit tftp_bootargs`.
+
+The U-Boot build also creates `deploy/unmatched-firmware.itb`. Put it in the
+TFTP root and run `run tftp_update_firmware` to update SPL and the
+OpenSBI/U-Boot FIT on SD. The FIT script verifies hashes, GPT loader partition
+types and capacities, then reads back and compares each write. See
+[`docs/boot/tftp-boot.md`](docs/boot/tftp-boot.md) for first-time updates and
+recovery precautions.
 
 Build the complete GPT SD image (the default when no target is given):
 
@@ -234,8 +260,10 @@ fw_payload.bin
 fw_payload.elf
 u-boot-spl.bin
 u-boot.itb
+unmatched-firmware.itb
 Image.gz
 hifive-unmatched-a00.dtb
+unmatched-fit.itb
 busybox
 rootfs.ext4
 unmatched-lite.img

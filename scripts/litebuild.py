@@ -90,6 +90,8 @@ class Paths:
         self.sd_image = self.deploy / "unmatched-lite.img"
         self.qemu_image = self.deploy / "qemu-lite.img"
         self.qemu_fit = self.deploy / "fit.itb"
+        self.unmatched_fit = self.deploy / "unmatched-fit.itb"
+        self.unmatched_firmware_fit = self.deploy / "unmatched-firmware.itb"
         self.qemu_boot_script = self.deploy / "boot.scr"
         self.qemu_uboot_bin = self.deploy / "u-boot.bin"
         self.qemu_uboot = self.deploy / "u-boot-qemu.bin"
@@ -97,6 +99,7 @@ class Paths:
         self.rootfs_overlay = self.repo / "rootfs"
         self.uboot_patch = self.repo / "patches/u-boot/2026.01/0005-riscv-dts-Add-few-PMU-events.patch"
         self.uboot_patch2 = self.repo / "patches/u-boot/2026.01/0006-pcie-fu740-debug-trace.patch"
+        self.uboot_patch3 = self.repo / "patches/u-boot/2026.01/0007-unmatched-tftp-and-opensbi-prints.patch"
         self.linux_patch = self.repo / "patches/linux/6.18/0001-riscv-dts-sifive-unmatched-keep-leds-settings.patch"
         self.linux_patch2 = self.repo / "patches/linux/6.18/0002-pcie-fu740-debug-trace.patch"
 
@@ -525,6 +528,8 @@ def fetch(paths, only=None, dev=False):
                 apply_patch_once(paths.uboot_src, paths.uboot_patch)
                 if paths.uboot_patch2.exists():
                     apply_patch_once(paths.uboot_src, paths.uboot_patch2)
+                if paths.uboot_patch3.exists():
+                    apply_patch_once(paths.uboot_src, paths.uboot_patch3)
         elif key == "linux":
             git_checkout(paths, key, paths.linux_src, dev=dev)
             if paths.profile == "unmatched":
@@ -605,6 +610,7 @@ def build_uboot(paths, env, dev=False):
 
     copy_artifact(paths.uboot_out / "spl/u-boot-spl.bin", paths.deploy / "u-boot-spl.bin")
     copy_artifact(paths.uboot_out / "u-boot.itb", paths.deploy / "u-boot.itb")
+    build_unmatched_firmware_fit(paths, env)
 
 
 def build_qemu_uboot(paths, env):
@@ -662,6 +668,10 @@ def build_linux(paths, env, dev=False):
         paths.linux_out / "arch/riscv/boot/dts/sifive/hifive-unmatched-a00.dtb",
         paths.deploy / "hifive-unmatched-a00.dtb",
     )
+    if paths.uboot_out.joinpath("tools/mkimage").is_file():
+        build_unmatched_fit(paths, env)
+    else:
+        say("SKIP unmatched FIT: build U-Boot first, then run the fit target")
 
 
 def _write_region(image, source, offset, size):
@@ -681,6 +691,203 @@ LABEL unmatched
   FDT /hifive-unmatched-a00.dtb
   APPEND root=/dev/mmcblk0p4 rw rootwait console=ttySIF0,115200 earlycon=sbi
 """
+
+
+def _unmatched_fit_its(paths):
+    return f"""/dts-v1/;
+
+/ {{
+  description = "HiFive Unmatched Linux boot image";
+  #address-cells = <2>;
+
+  images {{
+    kernel {{
+      description = "Linux kernel";
+      data = /incbin/("{paths.deploy / 'Image.gz'}");
+      type = "kernel";
+      arch = "riscv";
+      os = "linux";
+      compression = "gzip";
+      load = <0x0 0x80200000>;
+      entry = <0x0 0x80200000>;
+      hash-1 {{
+        algo = "sha256";
+      }};
+    }};
+
+    fdt {{
+      description = "HiFive Unmatched device tree";
+      data = /incbin/("{paths.deploy / 'hifive-unmatched-a00.dtb'}");
+      type = "flat_dt";
+      arch = "riscv";
+      compression = "none";
+      hash-1 {{
+        algo = "sha256";
+      }};
+    }};
+  }};
+
+  configurations {{
+    default = "unmatched";
+    unmatched {{
+      description = "HiFive Unmatched";
+      kernel = "kernel";
+      fdt = "fdt";
+    }};
+  }};
+}};
+"""
+
+
+def build_unmatched_fit(paths, env):
+    if paths.profile != "unmatched":
+        raise SystemExit("fit is only available for the unmatched profile")
+
+    mkimage = paths.uboot_out / "tools/mkimage"
+    if not mkimage.is_file():
+        raise SystemExit("U-Boot mkimage is missing; build U-Boot before the FIT")
+
+    for artifact in (paths.deploy / "Image.gz", paths.deploy / "hifive-unmatched-a00.dtb"):
+        if not artifact.is_file():
+            raise SystemExit(f"Expected FIT input was not built: {artifact}")
+
+    its = paths.out / "unmatched-fit.its"
+    its.write_text(_unmatched_fit_its(paths), encoding="ascii")
+    run([mkimage, "-f", its, paths.unmatched_fit], env=env)
+    say(f"DEPLOY {paths.unmatched_fit}")
+
+
+def _unmatched_firmware_update_cmd():
+    return """setenv firmware_addr_r 0x84000000 &&
+setenv spl_update_addr_r 0x82000000 &&
+setenv uboot_update_addr_r 0x82400000 &&
+setenv firmware_verify_addr_r 0x83000000 &&
+setenv firmware_mmcdev 0 &&
+setenv firmware_spl_part 1 &&
+setenv firmware_uboot_part 2 &&
+setenv verify yes &&
+imxtract ${firmware_addr_r} spl ${spl_update_addr_r} &&
+setenv spl_update_size ${filesize} &&
+setexpr spl_update_blocks ${filesize} + 0x1ff &&
+setexpr spl_update_blocks ${spl_update_blocks} / 0x200 &&
+imxtract ${firmware_addr_r} uboot ${uboot_update_addr_r} &&
+setenv uboot_update_size ${filesize} &&
+setexpr uboot_update_blocks ${filesize} + 0x1ff &&
+setexpr uboot_update_blocks ${uboot_update_blocks} / 0x200 &&
+mmc dev ${firmware_mmcdev} &&
+part type mmc ${firmware_mmcdev}:${firmware_spl_part} spl_partition_type &&
+part type mmc ${firmware_mmcdev}:${firmware_uboot_part} uboot_partition_type &&
+itest.s ${spl_partition_type} == 5b193300-fc78-40cd-8002-e86c45580b47 &&
+itest.s ${uboot_partition_type} == 2e54b353-1271-4842-806f-e436d6af6985 &&
+part start mmc ${firmware_mmcdev} ${firmware_spl_part} spl_update_start &&
+part size mmc ${firmware_mmcdev} ${firmware_spl_part} spl_partition_blocks &&
+part start mmc ${firmware_mmcdev} ${firmware_uboot_part} uboot_update_start &&
+part size mmc ${firmware_mmcdev} ${firmware_uboot_part} uboot_partition_blocks &&
+itest ${spl_update_blocks} -le ${spl_partition_blocks} &&
+itest ${uboot_update_blocks} -le ${uboot_partition_blocks} &&
+echo Writing U-Boot and OpenSBI to MMC ${firmware_mmcdev}:${firmware_uboot_part}... &&
+mmc write ${uboot_update_addr_r} ${uboot_update_start} ${uboot_update_blocks} &&
+mmc read ${firmware_verify_addr_r} ${uboot_update_start} ${uboot_update_blocks} &&
+cmp.b ${uboot_update_addr_r} ${firmware_verify_addr_r} ${uboot_update_size} &&
+echo Writing SPL to MMC ${firmware_mmcdev}:${firmware_spl_part}... &&
+mmc write ${spl_update_addr_r} ${spl_update_start} ${spl_update_blocks} &&
+mmc read ${firmware_verify_addr_r} ${spl_update_start} ${spl_update_blocks} &&
+cmp.b ${spl_update_addr_r} ${firmware_verify_addr_r} ${spl_update_size} &&
+echo Firmware update verified - reset the board
+"""
+
+
+def _unmatched_firmware_fit_its(spl, uboot, update_script):
+    return f"""/dts-v1/;
+
+/ {{
+  description = "HiFive Unmatched SPL, OpenSBI, and U-Boot update";
+  #address-cells = <2>;
+
+  images {{
+    spl {{
+      description = "U-Boot SPL";
+      data = /incbin/("{spl}");
+      type = "firmware";
+      arch = "riscv";
+      os = "u-boot";
+      compression = "none";
+      hash-1 {{
+        algo = "sha256";
+      }};
+    }};
+
+    uboot {{
+      description = "OpenSBI and U-Boot FIT";
+      data = /incbin/("{uboot}");
+      type = "firmware";
+      arch = "riscv";
+      os = "u-boot";
+      compression = "none";
+      hash-1 {{
+        algo = "sha256";
+      }};
+    }};
+
+    update {{
+      description = "Hash-checked MMC firmware update script";
+      data = /incbin/("{update_script}");
+      type = "script";
+      arch = "riscv";
+      compression = "none";
+      hash-1 {{
+        algo = "sha256";
+      }};
+    }};
+  }};
+
+  configurations {{
+    default = "unmatched";
+    unmatched {{
+      description = "HiFive Unmatched firmware update";
+      firmware = "uboot";
+      loadables = "spl";
+      script = "update";
+    }};
+  }};
+}};
+"""
+
+
+def build_unmatched_firmware_fit(paths, env):
+    if paths.profile != "unmatched":
+        raise SystemExit("firmware-fit is only available for the unmatched profile")
+
+    mkimage = paths.uboot_out / "tools/mkimage"
+    if not mkimage.is_file():
+        raise SystemExit("U-Boot mkimage is missing; build U-Boot before the firmware FIT")
+
+    artifacts = (
+        (paths.deploy / "u-boot-spl.bin", (SPL_END - SPL_START + 1) * SECTOR_SIZE),
+        (paths.deploy / "u-boot.itb", (UBOOT_END - UBOOT_START + 1) * SECTOR_SIZE),
+    )
+    for artifact, partition_size in artifacts:
+        if not artifact.is_file():
+            raise SystemExit(f"Expected firmware FIT input was not built: {artifact}")
+        if artifact.stat().st_size > partition_size:
+            raise SystemExit(f"{artifact} is larger than its SD image partition")
+
+    padded_artifacts = []
+    for artifact, _ in artifacts:
+        padded = paths.out / f"{artifact.name}.update"
+        data = artifact.read_bytes()
+        padded.write_bytes(data + bytes(-len(data) % SECTOR_SIZE))
+        padded_artifacts.append(padded)
+
+    update_script = paths.out / "unmatched-firmware-update.cmd"
+    update_script.write_text(_unmatched_firmware_update_cmd(), encoding="ascii")
+    its = paths.out / "unmatched-firmware.its"
+    its.write_text(
+        _unmatched_firmware_fit_its(*padded_artifacts, update_script),
+        encoding="ascii",
+    )
+    run([mkimage, "-f", its, paths.unmatched_firmware_fit], env=env)
+    say(f"DEPLOY {paths.unmatched_firmware_fit}")
 
 
 def _qemu_boot_cmd():
@@ -935,6 +1142,8 @@ def check(paths, env):
         inputs += [paths.uboot_patch, paths.linux_patch, paths.linux_defconfig]
         if paths.uboot_patch2.exists():
             inputs.append(paths.uboot_patch2)
+        if paths.uboot_patch3.exists():
+            inputs.append(paths.uboot_patch3)
         if paths.linux_patch2.exists():
             inputs.append(paths.linux_patch2)
     for path in inputs:
@@ -955,7 +1164,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=[
         "info", "check", "fetch", "opensbi", "u-boot", "qemu-u-boot", "linux", "busybox", "rootfs",
-        "bootchain", "sd-image", "qemu-image", "dev-linux", "dev-uboot", "clean", "stamp",
+        "fit", "firmware-fit", "bootchain", "sd-image", "qemu-image", "dev-linux", "dev-uboot", "clean", "stamp",
     ])
     parser.add_argument("--profile", choices=["unmatched", "qemu"], default="unmatched")
     parser.add_argument("--cross-compile", default="")
@@ -992,6 +1201,10 @@ def main():
         build_busybox(paths, env)
     elif args.command == "rootfs":
         build_rootfs(paths, env)
+    elif args.command == "fit":
+        build_unmatched_fit(paths, env)
+    elif args.command == "firmware-fit":
+        build_unmatched_firmware_fit(paths, env)
     elif args.command == "bootchain":
         build_opensbi(paths, env)
         build_uboot(paths, env)
