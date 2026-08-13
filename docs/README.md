@@ -77,6 +77,7 @@ Framework reference and official hardware documentation.
 | File | Description |
 |---|---|
 | [memory-map.md](reference/memory-map.md) | Complete physical address reference for FU740 and Unmatched |
+| [pwm.md](reference/pwm.md) | FU740 PWM 原理、寄存器、U-Boot 使用与学习路径 |
 
 Official SiFive HiFive Unmatched hardware and software documentation.
 

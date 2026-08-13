@@ -24,13 +24,14 @@ cd /home/adrian/devel/riscv/meson-unmatched
 
 统一入口是 `build.sh`。它先用 Meson 配置构建目录，再由 Ninja 调用
 `scripts/litebuild.py`；Python 驱动最后调用 OpenSBI、U-Boot、Linux 和
-BusyBox 各自的 Makefile：
+BusyBox 各自的 Makefile。`baremetal/` 中的轻量程序由 Meson 直接调用 cross
+file 声明的编译器：
 
 ```text
 ./build.sh <target>
   -> meson + ninja
-  -> scripts/litebuild.py
-  -> component Makefile
+  -> scripts/litebuild.py -> component Makefile
+  -> baremetal Meson target -> RISC-V compiler
 ```
 
 构建过程中各目录的职责如下：
@@ -44,6 +45,7 @@ BusyBox 各自的 Makefile：
 | `deploy/` | 可部署的最终产物 | 否 |
 | `patches/` | 在固定上游 revision 上应用的持久化源码改动 | 是 |
 | `configs/` | Linux 等组件的持久化配置 | 是 |
+| `baremetal/` | U-Boot `go` 裸机程序、公共启动代码和链接规则 | 是 |
 
 常用构建目标：
 
@@ -53,6 +55,8 @@ BusyBox 各自的 Makefile：
 ./build.sh linux           # Linux Image.gz + Unmatched DTB
 ./build.sh fit             # 将已有 Image.gz 和 Unmatched DTB 打包为 FIT
 ./build.sh firmware-fit    # 将已有 SPL 和 u-boot.itb 打包为固件更新 FIT
+./build.sh baremetal       # 全部 U-Boot go 裸机程序
+./build.sh unmatched-led-artifacts # D2 RGB LED 的全部分析产物
 ./build.sh rootfs          # BusyBox rootfs
 ./build.sh bootchain       # OpenSBI + U-Boot + Linux
 ./build.sh                 # 完整物理板 SD 卡镜像
@@ -71,6 +75,23 @@ unmatched-fit.itb
 rootfs.ext4
 unmatched-lite.img
 ```
+
+裸机产物位于 Meson 构建目录，例如：
+
+```text
+builddir/baremetal/unmatched-led.elf
+builddir/baremetal/unmatched-led.bin
+builddir/baremetal/unmatched-led.map
+builddir/baremetal/unmatched-led.dis
+builddir/baremetal/unmatched-led.sym
+```
+
+裸机编译器、汇编器、链接器、`objcopy` 及 ISA/ABI 参数统一配置在 Meson cross
+file；应用目录不保存工具链前缀或绝对路径。`build.sh` 会记录 cross file 的内容
+指纹，配置内容变化时自动重新创建 Meson 构建目录，使新参数立即生效。
+
+目录组织、添加新程序的方法和 U-Boot `go` 调用约定见
+[`baremetal/README.md`](../../baremetal/README.md)。
 
 ### 可复现构建与开发构建
 

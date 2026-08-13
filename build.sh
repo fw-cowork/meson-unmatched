@@ -19,6 +19,7 @@ Pass qemu to build the separate QEMU OpenSBI/U-Boot/Linux image.
 Common targets:
   check, fetch-sources, opensbi-fw, u-boot, linux, fit, firmware-fit,
   dev-linux, dev-uboot,
+  baremetal, unmatched-led-bin, unmatched-led-artifacts,
   busybox, rootfs, bootchain, sd-image, qemu-image, clean-lite
 
 Dev targets (preserve source edits + .config for iteration):
@@ -27,6 +28,7 @@ Dev targets (preserve source edits + .config for iteration):
 
 Examples:
   ./build.sh toolchain  Download and install the pinned SiFive Linux SDK
+  ./build.sh baremetal  Build every U-Boot go bare-metal program
   ./build.sh          Build deploy/unmatched-lite.img for the FU740 board
   ./build.sh qemu     Build deploy/qemu/qemu-lite.img for QEMU virt
 
@@ -65,12 +67,14 @@ command -v "$MESON_BIN" >/dev/null
 command -v "$NINJA_BIN" >/dev/null
 
 cross_stamp="${BUILD_DIR}/.unmatched-cross-file"
+cross_digest="$(sha256sum "${CROSS_FILE}" | awk '{print $1}')"
+cross_identity="${CROSS_FILE}:${cross_digest}"
 if [[ ! -f "${BUILD_DIR}/build.ninja" ]]; then
     "$MESON_BIN" setup "$BUILD_DIR" "$SCRIPT_DIR" --cross-file "$CROSS_FILE"
-elif [[ ! -f "${cross_stamp}" || "$(<"${cross_stamp}")" != "${CROSS_FILE}" ]]; then
+elif [[ ! -f "${cross_stamp}" || "$(<"${cross_stamp}")" != "${cross_identity}" ]]; then
     "$MESON_BIN" setup --wipe "$BUILD_DIR" "$SCRIPT_DIR" --cross-file "$CROSS_FILE"
 fi
-printf '%s\n' "$CROSS_FILE" > "$cross_stamp"
+printf '%s\n' "$cross_identity" > "$cross_stamp"
 
 if [[ "$PROFILE" == qemu ]]; then
     if [[ "$#" -eq 0 || "${1:-}" == image || "${1:-}" == qemu-image ]]; then

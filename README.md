@@ -161,8 +161,15 @@ Build individual components:
 ./build.sh linux            # Linux kernel
 ./build.sh fit              # package the current Image.gz + Unmatched DTB
 ./build.sh firmware-fit     # package SPL + OpenSBI/U-Boot for TFTP update
+./build.sh baremetal        # all U-Boot go bare-metal programs
+./build.sh unmatched-led-artifacts # D2 RGB LED binary and analysis files
 ./build.sh rootfs           # BusyBox rootfs
 ```
+
+Bare-metal sources are organized as independent programs under `baremetal/`;
+they share a Meson toolchain rule, U-Boot entry runtime, and linker script.
+See [`baremetal/README.md`](baremetal/README.md) for adding programs and running
+the generated raw binaries with U-Boot `go`.
 
 For iterative driver work, dev targets preserve local source edits:
 

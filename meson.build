@@ -1,4 +1,4 @@
-project('hifive-unmatched-lite', meson_version: '>=0.60.0')
+project('hifive-unmatched-lite', 'c', meson_version: '>=0.60.0')
 
 py = find_program('python3')
 driver = files('scripts/litebuild.py')
@@ -47,3 +47,5 @@ run_target('bootchain', command: [py, driver, 'bootchain'] + driver_args)
 run_target('sd-image', command: [py, driver, 'sd-image'] + driver_args)
 run_target('qemu-image', command: [py, driver, 'qemu-image', '--profile', 'qemu'] + driver_args)
 run_target('clean-lite', command: [py, driver, 'clean'] + driver_args)
+
+subdir('baremetal')

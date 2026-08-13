@@ -56,6 +56,10 @@ normalize_toolchain() {
         ln -sfn "${tool}" "${BIN_DIR}/riscv64-sifive-linux-${suffix}"
     done < <(find "${SDK_INSTALL}/sysroots" \( -type f -o -type l \) \
         -path "*/usr/bin/${upstream_prefix}*" -print)
+    [[ -x "${BIN_DIR}/riscv64-sifive-linux-as" ]] || fail "failed to normalize the SiFive assembler"
+    [[ -x "${BIN_DIR}/riscv64-sifive-linux-ld" ]] || fail "failed to normalize the SiFive linker"
+    ln -sfn "riscv64-sifive-linux-as" "${BIN_DIR}/as"
+    ln -sfn "riscv64-sifive-linux-ld" "${BIN_DIR}/ld"
     ln -sfn "${target_sysroot}" "${SYSROOT_LINK}"
 
     [[ -x "${BIN_DIR}/riscv64-sifive-linux-gcc" ]] || fail "failed to normalize the SiFive GCC"
@@ -68,6 +72,7 @@ setup() {
     command -v kas >/dev/null || fail "kas is required; install it before running ./toolchain.sh setup"
 
     if toolchain_ready; then
+        normalize_toolchain
         echo "SiFive toolchain is already ready: ${TOOLCHAIN_ROOT}"
         return
     fi

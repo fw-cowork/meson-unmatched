@@ -290,8 +290,12 @@ The cross file describes toolchain facts:
 c = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-gcc'
 cpp = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-g++'
 ar = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-ar'
+as = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-as'
+ld = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-ld'
 strip = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-strip'
 objcopy = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-objcopy'
+objdump = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-objdump'
+nm = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-nm'
 
 [host_machine]
 system = 'linux'
@@ -304,11 +308,16 @@ cross_compile = 'riscv64-sifive-linux-'
 toolchain_bindir = '@DIRNAME@/../toolchains/sifive/bin'
 sys_root = '@DIRNAME@/../toolchains/sifive/sysroot'
 native_bindirs = []
+
+[built-in options]
+c_args = ['-B@DIRNAME@/../toolchains/sifive/bin/', '-march=rv64imafdc', '-mabi=lp64d', '-mcmodel=medany', '-mno-relax', '-msmall-data-limit=0']
+c_link_args = ['-B@DIRNAME@/../toolchains/sifive/bin/', '-march=rv64imafdc', '-mabi=lp64d', '-mcmodel=medany', '-mno-relax']
 ```
 
 The extra `[properties]` are framework-specific. They bridge Meson's cross
 configuration into the Makefile/Kbuild world, where `CROSS_COMPILE=` is the
-standard interface.
+standard interface. Standard `c_args` and `c_link_args` tell relocatable GCC
+where to find target binutils and define the ISA, ABI, and code model.
 
 ### Runtime Overrides
 
