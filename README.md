@@ -167,7 +167,7 @@ Build individual components:
 ```
 
 Bare-metal sources are organized as independent programs under `baremetal/`;
-they share a Meson toolchain rule, U-Boot entry runtime, and linker script.
+they share a Meson toolchain rule, RISC-V entry code, and linker script.
 See [`baremetal/README.md`](baremetal/README.md) for adding programs and running
 the generated raw binaries with U-Boot `go`.
 

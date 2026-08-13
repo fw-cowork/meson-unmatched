@@ -5,9 +5,11 @@
 	.global _start
 	.type _start, @function
 _start:
+	/* Preserve U-Boot's return address before the C call overwrites ra. */
 	addi sp, sp, -16
 	sd ra, 8(sp)
 
+	/* The raw BIN omits the NOLOAD .bss section, so initialize it here. */
 	la t0, __bss_start
 	la t1, __bss_end
 .Lbss_clear:
@@ -18,6 +20,7 @@ _start:
 .Lbss_done:
 	call baremetal_main
 
+	/* Keep the return value in a0 and resume U-Boot with its original stack. */
 	ld ra, 8(sp)
 	addi sp, sp, 16
 	ret

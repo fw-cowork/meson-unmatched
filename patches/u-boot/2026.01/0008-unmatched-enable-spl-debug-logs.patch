@@ -1,0 +1,113 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: meson-unmatched <noreply@example.com>
+Date: Wed, 12 Aug 2026 00:00:00 +0800
+Subject: [PATCH] unmatched: enable useful SPL debug logs
+
+Compile debug-level logging into the Unmatched SPL and raise its runtime log
+level once the serial console is ready. Add board-stage messages around DRAM,
+peripheral reset setup, boot mode selection, and the final firmware handoff.
+U-Boot proper remains at warning level.
+---
+ board/sifive/unmatched/spl.c         | 25 +++++++++++++++++++++++++
+ configs/sifive_unmatched_defconfig   |  6 ++++++
+ 2 files changed, 31 insertions(+)
+
+diff --git a/board/sifive/unmatched/spl.c b/board/sifive/unmatched/spl.c
+index 6fc1d809540..c6c7d766dac 100644
+--- a/board/sifive/unmatched/spl.c
++++ b/board/sifive/unmatched/spl.c
+@@ -7,17 +7,21 @@
+  */
+ 
+ #include <init.h>
++#include <image.h>
+ #include <spl.h>
+ #include <misc.h>
+ #include <log.h>
+ #include <linux/delay.h>
+ #include <linux/io.h>
++#include <asm/global_data.h>
+ #include <asm/gpio.h>
+ #include <asm/arch/gpio.h>
+ #include <asm/arch/spl.h>
+ #include <linux/io.h>
+ #include <asm/arch/eeprom.h>
+ 
++DECLARE_GLOBAL_DATA_PTR;
++
+ struct pwm_sifive_regs {
+ 	unsigned int cfg;       /* PWM configuration register */
+ 	unsigned int pad0;      /* Reserved */
+@@ -134,12 +138,19 @@ int spl_board_init_f(void)
+ {
+ 	int ret;
+ 
++	/* Keep U-Boot proper quiet while making this early boot stage observable. */
++	gd->default_log_level = LOGL_DEBUG;
++	log_debug("HiFive Unmatched SPL debug logging enabled\n");
++	log_debug("Initializing FU740 DRAM\n");
++
+ 	ret = spl_dram_init();
+ 	if (ret) {
+ 		debug("HiFive Unmatched FU740 DRAM init failed: %d\n", ret);
+ 		goto end;
+ 	}
++	log_debug("FU740 DRAM initialized\n");
+ 
++	log_debug("Initializing PWM, Ethernet PHY, and USB resets\n");
+ 	spl_pwm_device_init();
+ 
+ 	ret = spl_gemgxl_init();
+@@ -165,6 +176,7 @@ int spl_board_init_f(void)
+ 		debug("USB 2.0 PHY (USB3320C) init failed: %d\n", ret);
+ 		goto end;
+ 	}
++	log_debug("Board peripheral resets complete\n");
+ 
+ end:
+ 	return ret;
+@@ -175,6 +187,9 @@ u32 spl_boot_device(void)
+ 	u32 mode_select = readl((void *)MODE_SELECT_REG);
+ 	u32 boot_device = mode_select & MODE_SELECT_MASK;
+ 
++	log_debug("Boot mode select: register=0x%x, mode=0x%x\n",
++		  mode_select, boot_device);
++
+ 	switch (boot_device) {
+ 	case MODE_SELECT_SPI:
+ 		return BOOT_DEVICE_SPI;
+@@ -187,6 +202,16 @@ u32 spl_boot_device(void)
+ 	}
+ }
+ 
++void spl_perform_board_fixups(struct spl_image_info *spl_image)
++{
++	log_debug("Loaded %s: os=%s, load=0x%lx, entry=0x%lx, size=0x%x, fdt=%p\n",
++		  spl_image->name ?: "next stage", genimg_get_os_name(spl_image->os),
++		  spl_image->load_addr, spl_image->entry_point, spl_image->size,
++		  spl_image->fdt_addr);
++	if (spl_image->os == IH_OS_OPENSBI)
++		log_debug("Handing control to RISC-V OpenSBI\n");
++}
++
+ #ifdef CONFIG_SPL_LOAD_FIT
+ int board_fit_config_name_match(const char *name)
+ {
+diff --git a/configs/sifive_unmatched_defconfig b/configs/sifive_unmatched_defconfig
+index e02aed391a1b..62b7c741e8c 100644
+--- a/configs/sifive_unmatched_defconfig
++++ b/configs/sifive_unmatched_defconfig
+@@ -32,5 +32,11 @@ CONFIG_DEFAULT_FDT_FILE="sifive/hifive-unmatched-a00.dtb"
+ CONFIG_SYS_CBSIZE=256
+ CONFIG_SYS_PBSIZE=276
++CONFIG_LOG=y
++CONFIG_LOG_MAX_LEVEL=4
++CONFIG_LOG_DEFAULT_LEVEL=4
++CONFIG_SPL_LOG=y
++CONFIG_SPL_LOG_MAX_LEVEL=7
++CONFIG_SPL_SHOW_ERRORS=y
+ CONFIG_DISPLAY_CPUINFO=y
+ CONFIG_DISPLAY_BOARDINFO=y
+ CONFIG_DISPLAY_BOARDINFO_LATE=y
+--
+2.43.0

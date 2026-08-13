@@ -100,6 +100,7 @@ class Paths:
         self.uboot_patch = self.repo / "patches/u-boot/2026.01/0005-riscv-dts-Add-few-PMU-events.patch"
         self.uboot_patch2 = self.repo / "patches/u-boot/2026.01/0006-pcie-fu740-debug-trace.patch"
         self.uboot_patch3 = self.repo / "patches/u-boot/2026.01/0007-unmatched-tftp-and-opensbi-prints.patch"
+        self.uboot_patch4 = self.repo / "patches/u-boot/2026.01/0008-unmatched-enable-spl-debug-logs.patch"
         self.linux_patch = self.repo / "patches/linux/6.18/0001-riscv-dts-sifive-unmatched-keep-leds-settings.patch"
         self.linux_patch2 = self.repo / "patches/linux/6.18/0002-pcie-fu740-debug-trace.patch"
 
@@ -530,6 +531,7 @@ def fetch(paths, only=None, dev=False):
                     apply_patch_once(paths.uboot_src, paths.uboot_patch2)
                 if paths.uboot_patch3.exists():
                     apply_patch_once(paths.uboot_src, paths.uboot_patch3)
+                apply_patch_once(paths.uboot_src, paths.uboot_patch4)
         elif key == "linux":
             git_checkout(paths, key, paths.linux_src, dev=dev)
             if paths.profile == "unmatched":
@@ -1139,7 +1141,7 @@ def check(paths, env):
     require_cross(env)
     inputs = [paths.rootfs_overlay]
     if paths.profile == "unmatched":
-        inputs += [paths.uboot_patch, paths.linux_patch, paths.linux_defconfig]
+        inputs += [paths.uboot_patch, paths.uboot_patch4, paths.linux_patch, paths.linux_defconfig]
         if paths.uboot_patch2.exists():
             inputs.append(paths.uboot_patch2)
         if paths.uboot_patch3.exists():

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-#include <baremetal.h>
+#include <baremetal/string.h>
 
 int bm_streq(const char *left, const char *right)
 {

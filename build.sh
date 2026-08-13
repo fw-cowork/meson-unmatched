@@ -19,7 +19,7 @@ Pass qemu to build the separate QEMU OpenSBI/U-Boot/Linux image.
 Common targets:
   check, fetch-sources, opensbi-fw, u-boot, linux, fit, firmware-fit,
   dev-linux, dev-uboot,
-  baremetal, unmatched-led-bin, unmatched-led-artifacts,
+  baremetal, baremetal-test, unmatched-led-bin, unmatched-led-artifacts,
   busybox, rootfs, bootchain, sd-image, qemu-image, clean-lite
 
 Dev targets (preserve source edits + .config for iteration):
@@ -29,6 +29,7 @@ Dev targets (preserve source edits + .config for iteration):
 Examples:
   ./build.sh toolchain  Download and install the pinned SiFive Linux SDK
   ./build.sh baremetal  Build every U-Boot go bare-metal program
+  ./build.sh baremetal-test  Run host-side bare-metal algorithm tests
   ./build.sh          Build deploy/unmatched-lite.img for the FU740 board
   ./build.sh qemu     Build deploy/qemu/qemu-lite.img for QEMU virt
 
@@ -49,12 +50,6 @@ esac
 
 if [[ "${1:-}" == toolchain ]]; then
     exec "${SCRIPT_DIR}/toolchain.sh" setup
-fi
-
-if [[ "${CROSS_FILE}" == "${DEFAULT_CROSS_FILE}" && ! -x "${SCRIPT_DIR}/toolchains/sifive/bin/riscv64-sifive-linux-gcc" ]]; then
-    echo "SiFive Freedom-U SDK is not installed. Run: ./build.sh toolchain" >&2
-    echo "Use UNMATCHED_LITE_CROSS_FILE only to select an explicit alternate toolchain." >&2
-    exit 1
 fi
 
 PROFILE=unmatched

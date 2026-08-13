@@ -56,6 +56,7 @@ file 声明的编译器：
 ./build.sh fit             # 将已有 Image.gz 和 Unmatched DTB 打包为 FIT
 ./build.sh firmware-fit    # 将已有 SPL 和 u-boot.itb 打包为固件更新 FIT
 ./build.sh baremetal       # 全部 U-Boot go 裸机程序
+./build.sh baremetal-test  # 主机上的裸机公共算法测试
 ./build.sh unmatched-led-artifacts # D2 RGB LED 的全部分析产物
 ./build.sh rootfs          # BusyBox rootfs
 ./build.sh bootchain       # OpenSBI + U-Boot + Linux
@@ -84,6 +85,7 @@ builddir/baremetal/unmatched-led.bin
 builddir/baremetal/unmatched-led.map
 builddir/baremetal/unmatched-led.dis
 builddir/baremetal/unmatched-led.sym
+builddir/baremetal/unmatched-led.check
 ```
 
 裸机编译器、汇编器、链接器、`objcopy` 及 ISA/ABI 参数统一配置在 Meson cross
@@ -180,6 +182,47 @@ Unmatched 构建把 `CONFIG_SPL_OPENSBI_SCRATCH_OPTIONS` 设置为 `0x2`。SPL �
 这不同于 OpenSBI 的 `DEBUG=1`：后者关闭编译优化，用于源码调试，并不是日志
 开关。
 
+### SPL 详细启动日志
+
+默认的 Unmatched SPL 只打印版本和 `Trying to boot from MMC1`。本仓库额外启用：
+
+```text
+CONFIG_LOG=y
+CONFIG_LOG_MAX_LEVEL=4
+CONFIG_LOG_DEFAULT_LEVEL=4
+CONFIG_SPL_LOG=y
+CONFIG_SPL_LOG_MAX_LEVEL=7
+CONFIG_SPL_SHOW_ERRORS=y
+```
+
+`CONFIG_SPL_LOG_MAX_LEVEL=7` 把 debug 日志编译进 SPL；板级初始化在串口可用后把
+SPL 的运行时级别调到 7。全局的 `CONFIG_LOG_DEFAULT_LEVEL` 仍为 4，因此不会
+同时把 U-Boot proper 变成 debug 输出。level 8 的内容转储和 level 9 的寄存器
+I/O 也不会编译进 SPL。
+
+重编并更新 `unmatched-firmware.itb` 后，串口输出将包含以下类型的信息：
+
+```text
+U-Boot SPL 2026.01-dirty (...)
+HiFive Unmatched SPL debug logging enabled
+Initializing FU740 DRAM
+FU740 DRAM initialized
+Initializing PWM, Ethernet PHY, and USB resets
+Board peripheral resets complete
+Boot mode select: register=0x..., mode=0x...
+Trying to boot from MMC1
+boot_device=..., mmc_dev=...
+Selecting MMC dev ...
+Found FIT
+...
+Loaded OpenSBI: os=OpenSBI, load=0x..., entry=0x..., size=0x..., fdt=0x...
+Handing control to RISC-V OpenSBI
+```
+
+这些信息来自 SPL 自身，发生在 U-Boot 环境加载之前，不能用 `setenv` 临时打开。
+修改后执行 `./build.sh dev-uboot`，再按 TFTP 固件更新流程写入新的 SPL；具体命令
+见 [U-Boot TFTP 启动](../boot/tftp-boot.md)。
+
 U-Boot 默认环境提供 `tftp_boot`，通过 TFTP 一次加载包含内核和 DTB 的 FIT，
 rootfs 仍使用 SD 卡第 4 分区。先构建并将 FIT 放进 TFTP server root：
 
@@ -249,10 +292,13 @@ root=/dev/mmcblk0p4 rw rootwait console=ttySIF0,115200 earlycon=sbi loglevel=8
 ```
 
 如果 SPI Flash 中已有持久化的旧 U-Boot environment，新加入的默认变量可能不
-会自动出现。可只恢复这些变量，不影响其他自定义项：
+会自动出现。`unmatched-firmware.itb` 只更新 SD 卡中的固件，不清除 SPI Flash
+environment。可只恢复这些变量，不影响 `ethaddr`、`serial#` 和其他自定义项：
 
 ```text
 => env default fit_addr_r ipaddr serverip netmask tftp_boot tftp_fit tftp_bootargs firmware_addr_r firmware_fit tftp_update_firmware
+=> printenv tftp_boot tftp_fit fit_addr_r serverip ipaddr netmask
+=> saveenv
 ```
 
 OpenSBI 打印发生在进入 U-Boot proper 之前，所以只替换 TFTP 目录中的 Linux

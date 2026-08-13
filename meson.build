@@ -30,22 +30,31 @@ foreach sysroot_dir : native_sysroot_dirs
   driver_args += ['--native-sysroot', sysroot_dir]
 endforeach
 
-run_target('info', command: [py, driver, 'info'] + driver_args)
-run_target('check', command: [py, driver, 'check'] + driver_args)
-run_target('fetch-sources', command: [py, driver, 'fetch'] + driver_args)
-run_target('opensbi-fw', command: [py, driver, 'opensbi'] + driver_args)
-run_target('u-boot', command: [py, driver, 'u-boot'] + driver_args)
-run_target('qemu-u-boot', command: [py, driver, 'qemu-u-boot'] + driver_args)
-run_target('linux', command: [py, driver, 'linux'] + driver_args)
-run_target('dev-linux', command: [py, driver, 'dev-linux'] + driver_args)
-run_target('dev-uboot', command: [py, driver, 'dev-uboot'] + driver_args)
-run_target('fit', command: [py, driver, 'fit'] + driver_args)
-run_target('firmware-fit', command: [py, driver, 'firmware-fit'] + driver_args)
-run_target('busybox', command: [py, driver, 'busybox'] + driver_args)
-run_target('rootfs', command: [py, driver, 'rootfs'] + driver_args)
-run_target('bootchain', command: [py, driver, 'bootchain'] + driver_args)
-run_target('sd-image', command: [py, driver, 'sd-image'] + driver_args)
-run_target('qemu-image', command: [py, driver, 'qemu-image', '--profile', 'qemu'] + driver_args)
-run_target('clean-lite', command: [py, driver, 'clean'] + driver_args)
+# Keep the public Meson target names stable while describing the Python driver
+# commands in one table.  Per-target arguments remain explicit for profiles
+# whose defaults differ from the normal host workflow.
+litebuild_targets = {
+  'info': ['info'],
+  'check': ['check'],
+  'fetch-sources': ['fetch'],
+  'opensbi-fw': ['opensbi'],
+  'u-boot': ['u-boot'],
+  'qemu-u-boot': ['qemu-u-boot'],
+  'linux': ['linux'],
+  'dev-linux': ['dev-linux'],
+  'dev-uboot': ['dev-uboot'],
+  'fit': ['fit'],
+  'firmware-fit': ['firmware-fit'],
+  'busybox': ['busybox'],
+  'rootfs': ['rootfs'],
+  'bootchain': ['bootchain'],
+  'sd-image': ['sd-image'],
+  'qemu-image': ['qemu-image', '--profile', 'qemu'],
+  'clean-lite': ['clean'],
+}
+
+foreach target_name, target_args : litebuild_targets
+  run_target(target_name, command: [py, driver] + target_args + driver_args)
+endforeach
 
 subdir('baremetal')

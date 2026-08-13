@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-#include <fu740.h>
+#include <baremetal/io.h>
+#include <soc/fu740.h>
 
 #define FU740_HFCLK_HZ                    26000000UL
 #define FU740_PRCI_BASE                   0x10000000UL

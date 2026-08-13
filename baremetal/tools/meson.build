@@ -1,0 +1,7 @@
+baremetal_objcopy = find_program('objcopy')
+baremetal_objdump = find_program('objdump')
+baremetal_nm = find_program('nm')
+baremetal_readelf = find_program('readelf')
+baremetal_copy = find_program('cp')
+baremetal_image_check = find_program('check_uboot_go_image.sh')
+baremetal_test_runner = find_program('run_host_tests.sh')

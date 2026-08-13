@@ -136,18 +136,28 @@ netmask=255.255.255.0
 => printenv serverip ipaddr netmask
 ```
 
-如果 SPI Flash 中保存过旧环境，持久化值可能覆盖新版默认值。只恢复本流程使用
-的 Linux 启动和固件更新变量：
+如果 SPI Flash 中保存过旧环境，持久化环境会作为一个整体覆盖新版 U-Boot 的
+默认环境。因此，即使已经通过 `unmatched-firmware.itb` 更新了 SD 卡中的 SPL
+和 U-Boot，`tftp_boot` 等新增变量也不会自动出现。命令行按 Tab 只能补全到
+`type_guid_*`，或者 `run tftp_boot` 报变量未定义，都是这一情况。
+
+只恢复本流程使用的 Linux 启动和固件更新变量：
 
 ```text
 => env default fit_addr_r ipaddr serverip netmask tftp_boot tftp_fit tftp_bootargs firmware_addr_r firmware_fit tftp_update_firmware
+=> printenv tftp_boot tftp_fit fit_addr_r serverip ipaddr netmask
 ```
 
-需要跨重启保存这些值时执行：
+这是定向恢复，不会修改 EEPROM 读取的 `ethaddr`、`serial#`，也不会删除其他
+自定义变量。确认输出正确后，将合并后的当前环境保存回 SPI Flash：
 
 ```text
 => saveenv
 ```
+
+`unmatched-firmware.itb` 的更新脚本只写 SD 卡的 loader1 和 loader2 分区，不写
+位于板载 SPI Flash `0x505000` 的 U-Boot environment，所以固件更新后只需执行
+一次上述环境迁移。
 
 ## 5. 可选检查网络
 
@@ -219,6 +229,195 @@ TFTP 服务器上的 `unmatched-firmware.itb` 来自本次构建，然后执行�
 3. 从实际 GPT 读取两个分区的起始扇区和容量，并拒绝超大镜像；
 4. 先写第 2 分区中的 `u-boot.itb`，回读并逐字节比较；
 5. 再写第 1 分区中的 SPL，回读并逐字节比较。
+
+### 更新原理
+
+`unmatched-firmware.itb` 不是直接交给 Boot ROM 启动的 `u-boot.itb`，而是外层的
+“更新容器”。它把两个待写入文件和一份 U-Boot 命令脚本打包到一个 FIT：
+
+```text
+unmatched-firmware.itb                 外层更新 FIT
+  /images/spl                          写入 SD loader1
+    data = u-boot-spl.bin（512 字节对齐）
+    hash-1 = sha256
+  /images/uboot                        写入 SD loader2
+    data = u-boot.itb（512 字节对齐）
+      OpenSBI fw_dynamic               M-mode 固件
+      U-Boot proper                    S-mode U-Boot
+      hifive-unmatched-a00.dtb         启动阶段 DTB
+    hash-1 = sha256
+  /images/update                       在当前 U-Boot 中执行
+    data = unmatched-firmware-update.cmd
+    type = script
+    hash-1 = sha256
+  /configurations/unmatched
+    firmware = "uboot"
+    loadables = "spl"
+    script = "update"
+```
+
+因此 OpenSBI 没有单独的 SD 分区。它是内层 `u-boot.itb` 的一个 FIT 节点，更新
+loader2 时会与 U-Boot proper 一起更新。
+
+整个过程分为“只操作内存”和“写 SD 卡”两个阶段：
+
+```text
+tftpboot
+  -> unmatched-firmware.itb 下载到 DDR 0x84000000
+  -> 尚未修改 SD 卡
+
+source 0x84000000#unmatched
+  -> 校验并执行 /images/update
+  -> imxtract 校验并提取 spl、uboot 到 DDR
+  -> 检查目标 GPT 类型、位置和容量
+  -> mmc write 开始修改 SD 卡
+  -> mmc read + cmp.b 回读验证
+```
+
+`tftpboot` 成功只表示文件已经进入 DDR，不代表固件已经更新。真正的入口是
+`source 0x84000000#unmatched`：`#unmatched` 选择
+`/configurations/unmatched`，U-Boot 从它的 `script = "update"` 属性找到脚本节点。
+设置 `verify=yes` 后，`source` 会校验脚本节点的 SHA-256；脚本中的 `imxtract`
+又分别校验 `spl` 和 `uboot` 节点，然后才把数据复制到指定 DDR 地址。
+
+### 构建端如何生成 FIT 和脚本
+
+实现位于 `scripts/litebuild.py`：
+
+- `_unmatched_firmware_update_cmd()` 返回板端执行的完整 U-Boot 脚本；
+- `_unmatched_firmware_fit_its()` 生成外层 FIT 的 ITS 描述；
+- `build_unmatched_firmware_fit()` 检查输入、补齐扇区、写出脚本和 ITS，再调用
+  U-Boot 的 `mkimage` 生成 `deploy/unmatched-firmware.itb`。
+
+打包前会先按本仓库的 SD 分区上限检查文件：SPL 不得超过 1 MiB，
+`u-boot.itb` 不得超过 4 MiB。之后使用以下等价逻辑把每个文件补零到 512 字节
+边界：
+
+```python
+data = artifact.read_bytes()
+padded = data + bytes(-len(data) % 512)
+```
+
+这样 `mmc write` 写入的最后一个扇区也完全来自 FIT，不会把目标地址后面原有的
+DDR 内容带入 SD 卡。补齐后的 SPL、`u-boot.itb` 和更新脚本分别放进 FIT 节点并
+生成 SHA-256。核心打包过程等价于：
+
+```python
+update_script.write_text(_unmatched_firmware_update_cmd(), encoding="ascii")
+its.write_text(
+    _unmatched_firmware_fit_its(padded_spl, padded_uboot, update_script),
+    encoding="ascii",
+)
+run([mkimage, "-f", its, "deploy/unmatched-firmware.itb"])
+```
+
+`./build.sh u-boot` 和 `./build.sh dev-uboot` 在生成新的 `u-boot-spl.bin` 和
+`u-boot.itb` 后会自动重新打包固件 FIT。已有这两个输入文件时，也可以只执行：
+
+```bash
+./build.sh firmware-fit
+```
+
+### 板端更新脚本实现
+
+构建生成的 `out/unmatched-firmware-update.cmd` 内容如下。它会作为
+`/images/update` 节点原样进入 FIT：
+
+```text
+setenv firmware_addr_r 0x84000000 &&
+setenv spl_update_addr_r 0x82000000 &&
+setenv uboot_update_addr_r 0x82400000 &&
+setenv firmware_verify_addr_r 0x83000000 &&
+setenv firmware_mmcdev 0 &&
+setenv firmware_spl_part 1 &&
+setenv firmware_uboot_part 2 &&
+setenv verify yes &&
+imxtract ${firmware_addr_r} spl ${spl_update_addr_r} &&
+setenv spl_update_size ${filesize} &&
+setexpr spl_update_blocks ${filesize} + 0x1ff &&
+setexpr spl_update_blocks ${spl_update_blocks} / 0x200 &&
+imxtract ${firmware_addr_r} uboot ${uboot_update_addr_r} &&
+setenv uboot_update_size ${filesize} &&
+setexpr uboot_update_blocks ${filesize} + 0x1ff &&
+setexpr uboot_update_blocks ${uboot_update_blocks} / 0x200 &&
+mmc dev ${firmware_mmcdev} &&
+part type mmc ${firmware_mmcdev}:${firmware_spl_part} spl_partition_type &&
+part type mmc ${firmware_mmcdev}:${firmware_uboot_part} uboot_partition_type &&
+itest.s ${spl_partition_type} == 5b193300-fc78-40cd-8002-e86c45580b47 &&
+itest.s ${uboot_partition_type} == 2e54b353-1271-4842-806f-e436d6af6985 &&
+part start mmc ${firmware_mmcdev} ${firmware_spl_part} spl_update_start &&
+part size mmc ${firmware_mmcdev} ${firmware_spl_part} spl_partition_blocks &&
+part start mmc ${firmware_mmcdev} ${firmware_uboot_part} uboot_update_start &&
+part size mmc ${firmware_mmcdev} ${firmware_uboot_part} uboot_partition_blocks &&
+itest ${spl_update_blocks} -le ${spl_partition_blocks} &&
+itest ${uboot_update_blocks} -le ${uboot_partition_blocks} &&
+echo Writing U-Boot and OpenSBI to MMC ${firmware_mmcdev}:${firmware_uboot_part}... &&
+mmc write ${uboot_update_addr_r} ${uboot_update_start} ${uboot_update_blocks} &&
+mmc read ${firmware_verify_addr_r} ${uboot_update_start} ${uboot_update_blocks} &&
+cmp.b ${uboot_update_addr_r} ${firmware_verify_addr_r} ${uboot_update_size} &&
+echo Writing SPL to MMC ${firmware_mmcdev}:${firmware_spl_part}... &&
+mmc write ${spl_update_addr_r} ${spl_update_start} ${spl_update_blocks} &&
+mmc read ${firmware_verify_addr_r} ${spl_update_start} ${spl_update_blocks} &&
+cmp.b ${spl_update_addr_r} ${firmware_verify_addr_r} ${spl_update_size} &&
+echo Firmware update verified - reset the board
+```
+
+脚本使用的 DDR 地址互不重叠：
+
+| 变量 | 地址 | 内容 |
+|---|---:|---|
+| `spl_update_addr_r` | `0x82000000` | 从 FIT 提取的 SPL |
+| `uboot_update_addr_r` | `0x82400000` | 从 FIT 提取的 `u-boot.itb` |
+| `firmware_verify_addr_r` | `0x83000000` | MMC 回读比较缓冲区，可重复使用 |
+| `firmware_addr_r` | `0x84000000` | TFTP 下载的外层固件 FIT |
+
+`imxtract` 成功后会把当前子镜像长度写入 `${filesize}`。脚本必须在提取下一个节点
+前保存 SPL 长度，在提取 `uboot` 后再保存 U-Boot 长度。写入扇区数使用：
+
+```text
+blocks = (filesize + 0x1ff) / 0x200
+```
+
+其中 `0x200` 是 512 字节，`0x1ff` 是 511，所以这是向上取整到完整扇区。当前
+打包文件已经是 512 字节对齐，该计算仍保留为防御性检查。
+
+脚本不使用固定的写入起始扇区。它通过 `part start` 和 `part size` 从目标 SD 卡的
+实际 GPT 获取位置与容量，但要求目标仍是本仓库规定的分区角色：
+
+| SD 分区 | FIT 节点 | GPT type GUID |
+|---|---|---|
+| `mmc 0:1` | `spl` | `5b193300-fc78-40cd-8002-e86c45580b47` |
+| `mmc 0:2` | `uboot` | `2e54b353-1271-4842-806f-e436d6af6985` |
+
+只有 GUID 和容量检查全部通过后，第一条 `mmc write` 才会执行。更新先写 loader2
+中的 OpenSBI/U-Boot，完成回读比较后才写作为启动入口的 loader1 SPL。每次写入
+后的检查过程都是：
+
+```text
+mmc write 源地址 分区起始扇区 扇区数
+mmc read  回读地址 分区起始扇区 扇区数
+cmp.b     源地址 回读地址 镜像字节数
+```
+
+所有命令使用 `&&` 串联。任意 hash、提取、MMC、GPT、容量、写入、读取或比较
+失败，后续命令都不会执行，也不会打印最终成功信息。但该机制不提供事务回滚：
+如果 loader2 已写入成功、随后 loader1 写入失败或设备断电，卡上可能出现新旧
+版本混合；如果正在执行任意一次 `mmc write` 时断电，对应分区可能损坏。
+
+### 新版 U-Boot 的简化入口
+
+新版 U-Boot 默认环境中的 `tftp_update_firmware` 只负责下载并启动 FIT 脚本：
+
+```text
+tftp_update_firmware=
+    echo WARNING: updating SPL, OpenSBI, and U-Boot on MMC 0 &&
+    tftpboot ${firmware_addr_r} ${firmware_fit} &&
+    setenv verify yes &&
+    source ${firmware_addr_r}#unmatched
+```
+
+因此 `run tftp_update_firmware` 与手工执行 `tftpboot`、`setenv verify yes`、
+`source` 使用的是同一份 FIT 内脚本，不存在两套不同的写卡实现。
 
 这里的 SHA-256 用于发现传输或存储损坏，并不认证发布者；FIT 当前没有签名。
 固件更新应只在可信的直连网络中进行，并确认 TFTP 文件来源。

@@ -1,11 +1,8 @@
 /* SPDX-License-Identifier: MIT */
-#ifndef BAREMETAL_H
-#define BAREMETAL_H
+#ifndef BAREMETAL_IO_H
+#define BAREMETAL_IO_H
 
-typedef unsigned int bm_u32;
-typedef unsigned long bm_ulong;
-
-#define BM_ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
+#include <baremetal/types.h>
 
 static inline bm_u32 bm_read32(bm_ulong address)
 {
@@ -21,8 +18,5 @@ static inline void bm_io_fence(void)
 {
 	__asm__ volatile("fence iorw, iorw" ::: "memory");
 }
-
-int bm_streq(const char *left, const char *right);
-bm_ulong baremetal_main(int argc, char *const argv[]);
 
 #endif

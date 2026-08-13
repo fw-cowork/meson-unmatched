@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 
-#include <sifive_pwm.h>
+#include <baremetal/io.h>
+#include <drivers/sifive_pwm.h>
 
 #define SIFIVE_PWM_ZERO_COMPARE      (1U << 9)
 #define SIFIVE_PWM_ENABLE_ALWAYS     (1U << 12)
 #define SIFIVE_PWM_COMPARE_MASK      0xffffU
-#define SIFIVE_PWM_SCALE_MASK        0xfU
 
 struct sifive_pwm_regs {
 	bm_u32 config;
@@ -22,7 +22,7 @@ void sifive_pwm_apply(bm_ulong base, const struct sifive_pwm_config *config)
 	volatile struct sifive_pwm_regs *regs =
 		(volatile struct sifive_pwm_regs *)base;
 	bm_u32 control = SIFIVE_PWM_ENABLE_ALWAYS |
-		(config->scale & SIFIVE_PWM_SCALE_MASK);
+		(config->scale & SIFIVE_PWM_MAX_SCALE);
 	bm_u32 channel;
 
 	if (config->zero_compare)

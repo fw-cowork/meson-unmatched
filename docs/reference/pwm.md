@@ -291,9 +291,10 @@ pwm disable <pwm_dev> <channel>
 
 程序使用 PWM0 通道 1、2、3，常亮时写 `0x0000`，闪烁时写 `0x8000`，关闭时写
 `0xffff`，并且会在程序返回后让 PWM 硬件继续运行。实现细节见
-[`baremetal/programs/led/README.md`](../../baremetal/programs/led/README.md)。
-通用的 PRCI、频率、占空比和 MMIO 更新实现位于 `baremetal/common/`，新测试程序
-应优先调用 `fu740.h` 和 `sifive_pwm.h` 中的公共 API。
+[`baremetal/apps/unmatched-led/README.md`](../../baremetal/apps/unmatched-led/README.md)。
+通用的 PRCI 实现位于 `baremetal/soc/fu740/`，频率、占空比和 MMIO 更新实现位于
+`baremetal/drivers/pwm/`，新测试程序应优先调用 `include/soc/fu740.h` 和
+`include/drivers/sifive_pwm.h` 中的公共 API。
 
 ## 7. 直接寄存器编程顺序
 

@@ -91,9 +91,10 @@ U-Boot 会把入口地址保留为 `argv[0]`。兼容命令的颜色参数是 `a
 `set_color()` 再处理 D2 非连续且非 RGB 顺序的实际 PWM 通道。这样增加组合色时只需
 组合逻辑颜色位，不会把板级通道编号散落到参数解析代码中。
 
-PRCI 访问、频率换算、占空比换算和 PWM MMIO 更新位于 `baremetal/common/`，对应
-公共接口位于 `baremetal/include/`。LED 程序只负责 D2 的颜色、模式和板级通道映射，
-后续风扇或其他 PWM 测试可以直接复用相同的 FU740/PWM 公共层。
+PRCI 访问位于 `baremetal/soc/fu740/clock.c`，频率换算和 PWM MMIO 更新位于
+`baremetal/drivers/pwm/`，对应接口位于 `baremetal/include/soc/` 和
+`baremetal/include/drivers/`。LED 程序只负责 D2 的颜色、模式和板级通道映射，
+后续风扇或其他 PWM 测试可以在自己的应用清单中显式复用 FU740/PWM 公共层。
 
 ## 硬件连接与寄存器
 
@@ -174,13 +175,12 @@ libc 依赖。
 
 ## `go` 入口为什么这样写
 
-链接脚本把 `_start` 固定在 `0x84000000`，与 TFTP 装载地址和 `go` 地址一致。
-当前 BIN 不是位置无关代码，不能只修改命令地址后装载到其他位置。公共入口
-`baremetal/common/start.S` 保存 U-Boot 传入的返回地址、清零 BSS，再调用
-`baremetal_main()`；函数返回值保留在 `a0`，最终通过 `ret` 交还 U-Boot，成为
-终端显示的 `rc`。
+固定链接地址、U-Boot 调用链、`argc/argv` 传递、`ra` 保存以及
+bare-metal 程序能够返回 U-Boot 的完整原理，见
+[bare-metal 公共文档](../../README.md#u-boot-go-如何启动程序)。
 
-程序复用 U-Boot 当前栈，不初始化 DDR、时钟或串口，因此只能在 U-Boot 已正常
-启动后执行。RISC-V U-Boot 的 `go` 会在调用入口前关闭中断并刷新缓存，但返回时
-不会撤销这些准备动作；完成 LED 测试后建议执行 `reset`，再继续正常启动流程。
-`go` 能执行任意机器码，只应运行自己构建并确认来源的二进制。
+对本 LED 程序来说，返回 U-Boot 只表示 CPU 恢复执行 U-Boot 命令循环，
+不会撤销 PWM 寄存器写入；LED 会继续按设定模式工作。程序依赖
+U-Boot 已完成 DDR、时钟和引脚复用初始化。完成硬件测试后建议执行
+`reset`，再继续正常启动流程。`go` 能执行任意机器码，只应运行
+自己构建并确认来源的二进制。

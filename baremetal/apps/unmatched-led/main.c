@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 
-#include <baremetal.h>
-#include <fu740.h>
-#include <sifive_pwm.h>
+#include <baremetal/app.h>
+#include <baremetal/string.h>
+#include <drivers/sifive_pwm.h>
+#include <soc/fu740.h>
 
 #define PWM_TARGET_BLINK_HZ         1UL
 #define PWM_TARGET_LOW_HZ           100UL
@@ -64,7 +65,7 @@ static const struct led_color *find_color(const char *name)
 }
 
 static bm_u32 compare_value(bm_u32 components, bm_u32 component,
-			    bm_u32 active_compare)
+				    bm_u32 active_compare)
 {
 	if (!(components & component))
 		return SIFIVE_PWM_COMPARE_OFF;
@@ -90,7 +91,8 @@ static void set_color(bm_u32 components, enum led_mode mode)
 		bm_ulong pclk = fu740_pclk_rate();
 
 		config.scale =
-			sifive_pwm_scale_for_frequency(pclk, PWM_TARGET_LOW_HZ);
+			sifive_pwm_scale_for_frequency(pclk,
+						       PWM_TARGET_LOW_HZ);
 		active_compare =
 			sifive_pwm_compare_for_fraction(period_ticks, 1, 2);
 	} else if (mode == LED_MODE_PWM_HIGH) {
