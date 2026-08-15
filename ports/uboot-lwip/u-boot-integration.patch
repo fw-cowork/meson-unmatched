@@ -1,0 +1,69 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: meson-unmatched <noreply@example.com>
+Date: Fri, 14 Aug 2026 00:00:00 +0800
+Subject: [PATCH] cmd: add standalone external lwIP port example
+
+Register the educational lwipport command and its private core/network
+objects.  The implementation is copied into this U-Boot checkout by the
+top-level build driver; this patch only describes the integration points.
+---
+ cmd/Kconfig | 12 ++++++++++++
+ cmd/Makefile | 1 +
+ lib/Makefile | 3 +++
+ net/Makefile | 1 +
+ 4 files changed, 17 insertions(+)
+
+diff --git a/cmd/Kconfig b/cmd/Kconfig
+index 000000000000..000000000000 100644
+--- a/cmd/Kconfig
++++ b/cmd/Kconfig
+@@ -2200,8 +2200,20 @@ config CMD_DHCP
+ 	bool "dhcp"
+ 	select PROT_DHCP_LWIP if NET_LWIP
+ 	help
+ 	  Boot image via network using DHCP/TFTP protocol
++
++config CMD_LWIP_PORT
++	bool "lwipport"
++	depends on NET
++	depends on DM_ETH
++	depends on !PROT_TCP
++	select LIB_RAND
++	help
++	  Enable the standalone external lwIP/U-Boot port example.
++	  The command is named lwipport so it can coexist with U-Boot's
++	  legacy ping and tftpboot commands. It cannot be combined with the
++	  legacy PROT_TCP implementation because both export tcp_init().
+ 
+ config CMD_DNS
+ 	bool "dns"
+ 	select DNS
+diff --git a/cmd/Makefile b/cmd/Makefile
+index 000000000000..000000000000 100644
+--- a/cmd/Makefile
++++ b/cmd/Makefile
+@@ -999,4 +999,5 @@ obj-$(CONFIG_CMD_PVBLOCK) += pvblock.o
+ obj-$(CONFIG_CMD_PMIC) += pmic.o
+ obj-$(CONFIG_CMD_REGULATOR) += regulator.o
++obj-$(CONFIG_CMD_LWIP_PORT) += lwip-port.o
+ 
+ obj-$(CONFIG_CMD_BLOB) += blob.o
+diff --git a/lib/Makefile b/lib/Makefile
+index 000000000000..000000000000 100644
+--- a/lib/Makefile
++++ b/lib/Makefile
+@@ -105,3 +105,6 @@ obj-$(CONFIG_$(PHASE_)MBEDTLS_LIB_TLS) += mbedtls/
+ obj-$(CONFIG_NET_LWIP) += lwip/
++ifndef CONFIG_XPL_BUILD
++obj-$(CONFIG_CMD_LWIP_PORT) += lwip-port/
++endif
+ 
+ ifdef CONFIG_XPL_BUILD
+diff --git a/net/Makefile b/net/Makefile
+index 000000000000..000000000000 100644
+--- a/net/Makefile
++++ b/net/Makefile
+@@ -48,2 +48,3 @@ endif
+ 
+ obj-$(CONFIG_NET_LWIP) += lwip/
++obj-$(CONFIG_CMD_LWIP_PORT) += lwip-port/

@@ -1,4 +1,4 @@
-project('hifive-unmatched-lite', 'c', meson_version: '>=0.60.0')
+project('hifive-unmatched-lite', 'c', meson_version: '>=1.10.0')
 
 py = find_program('python3')
 driver = files('scripts/litebuild.py')
@@ -39,6 +39,9 @@ litebuild_targets = {
   'fetch-sources': ['fetch'],
   'opensbi-fw': ['opensbi'],
   'u-boot': ['u-boot'],
+  'u-boot-mmode': ['u-boot-mmode'],
+  'u-boot-lwip': ['u-boot-lwip'],
+  'u-boot-lwip-port': ['u-boot-lwip-port'],
   'qemu-u-boot': ['qemu-u-boot'],
   'linux': ['linux'],
   'dev-linux': ['dev-linux'],

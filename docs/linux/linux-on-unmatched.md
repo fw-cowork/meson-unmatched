@@ -381,7 +381,7 @@ git -C src/linux diff -- drivers/pci/ > patches/linux/0002-pcie-learning.patch
 
 # 修改配置
 cd out/linux
-make -C ../../src/linux O=$PWD ARCH=riscv CROSS_COMPILE=riscv64-sifive-linux- menuconfig
+make -C ../../src/linux O=$PWD ARCH=riscv CROSS_COMPILE=riscv64-freedomusdk-linux- menuconfig
 
 # 用修改后的配置重建
 UNMATCHED_LITE_KEEP_CONFIG=1 ./build.sh linux

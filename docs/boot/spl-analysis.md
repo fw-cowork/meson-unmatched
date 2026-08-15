@@ -355,7 +355,7 @@ spl_invoke_opensbi(spl_image)
   │
   ├─ 准备 fw_dynamic_info 结构体:
   │   struct fw_dynamic_info opensbi_info = {
-  │       .magic     = 0x4942534,   // "SBI" + 版本
+  │       .magic     = 0x4942534f,  // "OSBI"
   │       .version   = 2,           // FW_DYNAMIC_INFO_VERSION
   │       .next_addr = os_entry,    // ← OpenSBI 完成后跳转地址
   │       .next_mode = 1,           // PRV_S (S-mode)

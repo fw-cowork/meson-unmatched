@@ -74,10 +74,10 @@ the required host tools once:
 sudo apt-get update
 sudo apt-get install -y \
   bc bison build-essential chrpath cpio debianutils diffstat e2fsprogs file \
-  flex gawk gdisk git iputils-ping libacl1 locales m4 make meson ninja-build \
+  flex gawk gdisk git iputils-ping libacl1 libgnutls28-dev locales m4 make meson ninja-build \
   openssl python3 python3-git python3-jinja2 python3-pexpect python3-pip \
-  python3-subunit qemu-system-misc socat texinfo unzip wget xz-utils zstd
-python3 -m pip install --user kas
+  python3-subunit qemu-system-misc socat swig texinfo unzip wget xz-utils zstd
+python3 -m pip install --user 'meson>=1.10' kas
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -86,6 +86,21 @@ For GDB debugging, install the optional host debugger:
 ```bash
 sudo apt-get install -y gdb-multiarch
 ```
+
+Developer machines and CI use the same Freedom-U-SDK compiler as production.
+Install a shared Yocto `populate_sdk` installer when one is available:
+
+```bash
+./build.sh toolchain /path/to/freedom-u-sdk-toolchain.sh
+./build.sh test
+```
+
+The installer is generated once by `populate_sdk` and can be stored in the
+team's artifact service for other x86_64 Linux machines. If no shared installer
+is available, `./build.sh toolchain` builds the same SDK from the pinned source.
+`./build.sh test` uses an independent `builddir-test/`, runs native algorithm
+tests, cross-builds `unmatched-tests`, and checks its entry point and
+relocations.
 
 `./build.sh toolchain` performs the SiFive toolchain bootstrap. It clones the
 pinned `sifiveinc/freedom-u-sdk` `2026.01.00` source release into
@@ -124,10 +139,11 @@ cross/sifive-freedom-u-sdk.ini
 This requires `kas`, a Linux x86_64 host, and substantial initial resources.
 SiFive recommends at least 140 GB of free disk space and 32 GB of RAM for
 Freedom-U-SDK image builds.
-It does not use a distro `riscv64-linux-gnu-*` compiler or a sibling KAS tree.
+Production images and tests both use `riscv64-freedomusdk-linux-*`; they do not
+use a distro cross compiler or a sibling KAS tree.
 
-An alternate toolchain is supported only as an explicit override with
-`UNMATCHED_LITE_CROSS_FILE`.
+An alternate cross file is supported only for another installation of the same
+Freedom-U-SDK toolchain and is selected with `UNMATCHED_LITE_CROSS_FILE`.
 
 When using the Yocto-built cross compiler outside BitBake, the wrapper creates
 a private `out/toolchain-shim/` directory so GCC can find the matching RISC-V
@@ -158,11 +174,16 @@ Build individual components:
 ```bash
 ./build.sh opensbi-fw      # OpenSBI firmware
 ./build.sh u-boot           # U-Boot SPL + proper (also builds OpenSBI)
+./build.sh u-boot-mmode     # SPL + M-mode U-Boot proper (no OpenSBI)
+./build.sh u-boot-lwip      # isolated Unmatched lwIP experiment
+./build.sh u-boot-lwip-port # standalone port of pinned latest upstream lwIP
 ./build.sh linux            # Linux kernel
 ./build.sh fit              # package the current Image.gz + Unmatched DTB
 ./build.sh firmware-fit     # package SPL + OpenSBI/U-Boot for TFTP update
 ./build.sh baremetal        # all U-Boot go bare-metal programs
 ./build.sh unmatched-led-artifacts # D2 RGB LED binary and analysis files
+./build.sh unmatched-tests-artifacts # FU740 board-side test image
+./build.sh unmatched-mmode-check-artifacts # M-mode CSR access test image
 ./build.sh rootfs           # BusyBox rootfs
 ```
 
@@ -171,6 +192,11 @@ they share a Meson toolchain rule, RISC-V entry code, and linker script.
 See [`baremetal/README.md`](baremetal/README.md) for adding programs and running
 the generated raw binaries with U-Boot `go`.
 
+The isolated M-mode path is documented in
+[`docs/boot/uboot-mmode-baremetal.md`](docs/boot/uboot-mmode-baremetal.md). It
+keeps the default OpenSBI/S-mode image intact and packages a separate
+TFTP-installable SPL/U-Boot pair for bare-metal experiments.
+
 For iterative driver work, dev targets preserve local source edits:
 
 ```bash
@@ -178,10 +204,15 @@ For iterative driver work, dev targets preserve local source edits:
 ./build.sh dev-uboot         # Incremental U-Boot build; edits in src/u-boot/ survive
 ```
 
-**WARNING:** A plain `./build.sh` (or `./build.sh linux` / `./build.sh u-boot`)
-runs `git reset --hard` + `git clean`, discarding uncommitted work. Export
-experiments with `git -C src/linux diff` (or `src/u-boot`) before returning
-to reproducible mode.
+**WARNING:** A plain `./build.sh` (or `./build.sh linux`, `./build.sh u-boot`,
+or either lwIP U-Boot target) runs `git reset --hard` + `git clean`, discarding
+uncommitted work. Export experiments with `git -C src/linux diff` (or
+`src/u-boot`) before returning to reproducible mode.
+
+`u-boot-lwip-port` is the educational from-source port and keeps its generated
+U-Boot tree in `src/u-boot-lwip-port`. See
+[`docs/network/lwip-port.md`](docs/network/lwip-port.md) for the port layers,
+build flow, and board test sequence.
 
 Build the whole boot chain:
 

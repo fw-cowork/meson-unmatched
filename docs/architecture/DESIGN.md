@@ -287,15 +287,15 @@ The cross file describes toolchain facts:
 
 ```ini
 [binaries]
-c = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-gcc'
-cpp = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-g++'
-ar = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-ar'
-as = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-as'
-ld = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-ld'
-strip = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-strip'
-objcopy = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-objcopy'
-objdump = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-objdump'
-nm = '@DIRNAME@/../toolchains/sifive/bin/riscv64-sifive-linux-nm'
+c = '@DIRNAME@/../toolchains/sifive/bin/riscv64-freedomusdk-linux-gcc'
+cpp = '@DIRNAME@/../toolchains/sifive/bin/riscv64-freedomusdk-linux-g++'
+ar = '@DIRNAME@/../toolchains/sifive/bin/riscv64-freedomusdk-linux-ar'
+as = '@DIRNAME@/../toolchains/sifive/bin/riscv64-freedomusdk-linux-as'
+ld = '@DIRNAME@/../toolchains/sifive/bin/riscv64-freedomusdk-linux-ld'
+strip = '@DIRNAME@/../toolchains/sifive/bin/riscv64-freedomusdk-linux-strip'
+objcopy = '@DIRNAME@/../toolchains/sifive/bin/riscv64-freedomusdk-linux-objcopy'
+objdump = '@DIRNAME@/../toolchains/sifive/bin/riscv64-freedomusdk-linux-objdump'
+nm = '@DIRNAME@/../toolchains/sifive/bin/riscv64-freedomusdk-linux-nm'
 
 [host_machine]
 system = 'linux'
@@ -304,7 +304,7 @@ cpu = 'sifive-u740'
 endian = 'little'
 
 [properties]
-cross_compile = 'riscv64-sifive-linux-'
+cross_compile = 'riscv64-freedomusdk-linux-'
 toolchain_bindir = '@DIRNAME@/../toolchains/sifive/bin'
 sys_root = '@DIRNAME@/../toolchains/sifive/sysroot'
 native_bindirs = []

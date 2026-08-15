@@ -332,7 +332,7 @@ both U-Boot and Linux artifacts.
 Meson/Ninja is the primary build entry:
 
 ```bash
-meson setup builddir meson-unmatched --cross-file cross/riscv64-freedomusdk-linux.ini
+meson setup builddir meson-unmatched --cross-file cross/sifive-freedom-u-sdk.ini
 ninja -C builddir info
 ninja -C builddir fetch
 ninja -C builddir opensbi-fw
@@ -602,7 +602,7 @@ Deploy manifest:
 {
   "board": "hifive-unmatched-a00",
   "manifest": "unmatched-lite.yml",
-  "cross_file": "riscv64-freedomusdk-linux.ini",
+  "cross_file": "sifive-freedom-u-sdk.ini",
   "components": {
     "u-boot": {
       "revision": "127a42c7257a6ffbbd1575ed1cbaa8f5408a44b3",

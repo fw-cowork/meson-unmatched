@@ -39,7 +39,8 @@ subdir('apps')
 baremetal_artifacts = []
 foreach app : baremetal_apps
   app_name = app['name']
-  app_map_private = meson.current_build_dir() / (app_name + '.elf.p') / (app_name + '.map')
+  app_build_subdir = app_name
+  app_map_private = meson.current_build_dir() / app_build_subdir / (app_name + '.elf.p') / (app_name + '.map')
   app_elf = executable(
     app_name,
     app['sources'],
@@ -47,6 +48,7 @@ foreach app : baremetal_apps
     link_args: ['-Wl,-Map,' + app_map_private],
     link_depends: baremetal_uboot_go_link_depends,
     name_suffix: 'elf',
+    build_subdir: app_build_subdir,
     build_by_default: false,
   )
 
@@ -61,6 +63,7 @@ foreach app : baremetal_apps
       '@INPUT@',
     ],
     capture: true,
+    build_subdir: app_build_subdir,
     build_by_default: false,
   )
 
@@ -69,6 +72,7 @@ foreach app : baremetal_apps
     input: app_elf,
     output: app_name + '.bin',
     command: [baremetal_objcopy, '-O', 'binary', '@INPUT@', '@OUTPUT@'],
+    build_subdir: app_build_subdir,
     build_by_default: false,
   )
 
@@ -77,6 +81,7 @@ foreach app : baremetal_apps
     input: app_elf,
     output: app_name + '.map',
     command: [baremetal_copy, app_map_private, '@OUTPUT@'],
+    build_subdir: app_build_subdir,
     build_by_default: false,
   )
 
@@ -86,6 +91,7 @@ foreach app : baremetal_apps
     output: app_name + '.dis',
     command: [baremetal_objdump, '-d', '-S', '@INPUT@'],
     capture: true,
+    build_subdir: app_build_subdir,
     build_by_default: false,
   )
 
@@ -95,6 +101,7 @@ foreach app : baremetal_apps
     output: app_name + '.sym',
     command: [baremetal_nm, '-n', '-S', '@INPUT@'],
     capture: true,
+    build_subdir: app_build_subdir,
     build_by_default: false,
   )
 

@@ -76,8 +76,20 @@
 
 | 顺序 | 文档 | 重点 |
 |---|---|---|
-| 1 | `boot/opensbi-on-unmatched.md` | OpenSBI 职责边界、fw_dynamic 协议、SBI 服务、平台勘误 |
-| 2 | `boot/spl-analysis.md` §5 | 对照：SPL 如何构造 fw_dynamic_info 并跳转 OpenSBI |
+| 1 | `opensbi/README.md` | 官方资料、RISC-V 前置、SBI 契约、firmware 类型和学习路线 |
+| 2 | `opensbi/getting-started.md` | 第一条命令、第一周阅读顺序、第一次 GDB 和入门验收 |
+| 3 | `opensbi/architecture.md` | 特权级、SBI ABI、trap、scratch、domain、PMP 和初始化生命周期 |
+| 4 | `opensbi/firmware-boot.md` | SPL 构造 fw_dynamic_info、relocation、cold/warmboot 和 `mret` |
+| 5 | `opensbi/ecall-extensions.md` | ecall 注册/分发、现代与 legacy ABI、核心扩展调用链 |
+| 6 | `opensbi/sbi-abi-reference.md` | 常用扩展参数、返回值、错误码和 RV32/RV64 差异 |
+| 7 | `opensbi/platform-fu740.md` | generic FDT、FU740 PMIC/TLB hook 和各阶段 ownership |
+| 8 | `opensbi/debug-testing.md` | ELF/GDB/SBIUnit/QEMU/上板测试和回归矩阵 |
+| 9 | `opensbi/labs.md` | 按风险递进完成 9 个源码和硬件实验 |
+| 10 | `opensbi/source-annotations.md` | 按函数和共享状态复盘完整调用图 |
+| 11 | `opensbi/porting-checklist.md` | 把方法迁移到另一台 RISC-V 机器 |
+| 12 | `opensbi/security-model.md` | 理解 domain/PMP、trap delegation 和共享内存安全边界 |
+| 13 | `boot/opensbi-on-unmatched.md` | 当前板子的启动位置、镜像布局和边界总结 |
+| 14 | `boot/spl-analysis.md` §5 | 对照 SPL 如何构造 fw_dynamic_info 并跳转 OpenSBI |
 
 **验收标准：** 能解释 FW_DYNAMIC 模式的三个字段 (next_addr, next_mode, boot_hart) 的含义。
 
@@ -251,6 +263,19 @@ Week 10+:   阶段 5 (框架演进、贡献 patch)
 | `docs/boot/boot-chain-overview.md` | **启动链总览** — 五阶段完整流程 |
 | `docs/boot/spl-analysis.md` | U-Boot SPL 代码解析 (启动流程、编译、FIT) |
 | `docs/boot/opensbi-on-unmatched.md` | **OpenSBI 深度分析** — fw_dynamic、SBI 服务、平台集成 |
+| `docs/opensbi/README.md` | OpenSBI 官方资料索引、版本固定和学习路线 |
+| `docs/opensbi/getting-started.md` | OpenSBI 从零开始和第一周学习路径 |
+| `docs/opensbi/source-guide.md` | OpenSBI firmware/trap/ecall/platform 源码导读与实验 |
+| `docs/opensbi/architecture.md` | OpenSBI 特权级、ABI、scratch、domain 和生命周期 |
+| `docs/opensbi/firmware-boot.md` | OpenSBI firmware 启动、relocation、cold/warmboot 和 mret |
+| `docs/opensbi/ecall-extensions.md` | SBI ecall/扩展分发与核心 handler 源码导读 |
+| `docs/opensbi/sbi-abi-reference.md` | SBI ABI、错误码和常用 extension 参数速查 |
+| `docs/opensbi/platform-fu740.md` | generic/FU740 平台适配、FDT、PMIC 和 errata |
+| `docs/opensbi/debug-testing.md` | OpenSBI 构建、GDB、SBIUnit、QEMU 和上板验证 |
+| `docs/opensbi/labs.md` | OpenSBI 源码、ABI、SBIUnit 和 Unmatched 动手实验 |
+| `docs/opensbi/source-annotations.md` | OpenSBI 函数级源码索引和调用图 |
+| `docs/opensbi/porting-checklist.md` | 新平台移植、FDT、Kconfig、设备和验收清单 |
+| `docs/opensbi/security-model.md` | OpenSBI 安全模型、domain/PMP 和共享内存审查 |
 | `docs/boot/uboot-boot-log.md` | U-Boot proper 启动日志分析 (内核重定位) |
 | `docs/linux/linux-on-unmatched.md` | **Linux 内核视角** — config、DTS、驱动、rootfs |
 | `docs/pcie/pcie-learning.md` | PCIe 学习路线与实验计划 |

@@ -129,8 +129,7 @@ Proposed top-level layout:
 │   ├── boot-flow.schema.json
 │   └── artifacts.schema.json
 ├── cross/
-│   ├── riscv64-linux-gnu.ini
-│   └── riscv64-freedomusdk-linux.ini
+│   └── sifive-freedom-u-sdk.ini
 ├── 3rdparty/
 │   ├── README.md
 │   ├── schemas/
@@ -281,11 +280,10 @@ provide optional toolchain/native helper paths
 This follows the user's direction: toolchain configuration belongs in Meson's
 cross-file mechanism.
 
-Existing files under `meson-unmatched/cross/` should eventually move here:
+The Unmatched build uses one pinned SDK cross file:
 
 ```text
-cross/riscv64-linux-gnu.ini
-cross/riscv64-freedomusdk-linux.ini
+cross/sifive-freedom-u-sdk.ini
 ```
 
 `meson-unmatched/` may keep thin compatibility copies or refer to `../cross/`.
@@ -569,15 +567,9 @@ image.
 ## 7.1 First-Time Setup
 
 ```bash
+./build.sh toolchain /path/to/freedom-u-sdk-toolchain.sh
 meson setup meson-unmatched/builddir meson-unmatched \
-  --cross-file cross/riscv64-linux-gnu.ini
-```
-
-or, using the local Freedom-U-SDK toolchain:
-
-```bash
-meson setup meson-unmatched/builddir meson-unmatched \
-  --cross-file cross/riscv64-freedomusdk-linux.ini
+  --cross-file cross/sifive-freedom-u-sdk.ini
 ```
 
 ## 7.2 Build Loop
@@ -682,7 +674,7 @@ iterations.
 Primary commands:
 
 ```bash
-meson setup builddir meson-unmatched --cross-file cross/riscv64-linux-gnu.ini
+meson setup builddir meson-unmatched --cross-file cross/sifive-freedom-u-sdk.ini
 ninja -C builddir info
 ninja -C builddir fetch
 ninja -C builddir opensbi-fw
@@ -734,7 +726,7 @@ boards/hifive-unmatched-a00/board.yml
 boards/hifive-unmatched-a00/boot-flow.yml
 boards/hifive-unmatched-a00/artifacts.yml
 manifests/unmatched-lite.yml
-cross/riscv64-freedomusdk-linux.ini
+cross/sifive-freedom-u-sdk.ini
 ```
 
 Configuration format policy:
@@ -812,7 +804,7 @@ boot_partition:
 {
   "board": "hifive-unmatched-a00",
   "manifest": "unmatched-lite.yml",
-  "cross_file": "riscv64-freedomusdk-linux.ini",
+  "cross_file": "sifive-freedom-u-sdk.ini",
   "components": {
     "opensbi": {
       "revision": "74434f255873d74e56cc50aa762d1caf24c099f8",

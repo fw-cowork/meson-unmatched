@@ -101,7 +101,7 @@ SPL 通过 `fw_dynamic_info` 结构体传递控制权：
 
 ```c
 struct fw_dynamic_info opensbi_info = {
-    .magic     = 0x4942534,       // "SBI" + version
+    .magic     = 0x4942534f,      // "OSBI"
     .version   = 2,               // FW_DYNAMIC_INFO_VERSION
     .next_addr = os_entry,        // U-Boot proper 入口 (= 0x80200000)
     .next_mode = 1,               // PRV_S (S-mode)

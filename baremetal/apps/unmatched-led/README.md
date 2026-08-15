@@ -6,7 +6,7 @@
 
 ## U-Boot 运行
 
-把 `builddir/baremetal/unmatched-led.bin` 放入 TFTP server root，然后执行：
+把 `builddir/baremetal/unmatched-led/unmatched-led.bin` 放入 TFTP server root，然后执行：
 
 ```text
 => setenv serverip 192.168.1.23

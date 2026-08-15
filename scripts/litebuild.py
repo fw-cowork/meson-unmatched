@@ -18,6 +18,7 @@ from fat import write_fat16_image
 OPEN_SBI_REV = "74434f255873d74e56cc50aa762d1caf24c099f8"
 U_BOOT_REV = "127a42c7257a6ffbbd1575ed1cbaa8f5408a44b3"
 LINUX_REV = "a607c8f744340ad2c2486d46e96b66df47caffba"
+LWIP_REV = "3d896ba0a37ff3ce73270ca5e230707fe47f60e3"
 BUSYBOX_VERSION = "1.37.0"
 BUSYBOX_SHA256 = "3311dff32e746499f4df0d5df04d7eb396382d7e108bb9250e7b519b837043a4"
 BUSYBOX_URL = f"https://busybox.net/downloads/busybox-{BUSYBOX_VERSION}.tar.bz2"
@@ -53,6 +54,11 @@ REPOS = {
         "mirror": "git.kernel.org.pub.scm.linux.kernel.git.stable.linux.git",
         "rev": LINUX_REV,
     },
+    "lwip": {
+        "url": "https://github.com/lwip-tcpip/lwip.git",
+        "mirror": "github.com.lwip-tcpip.lwip.git",
+        "rev": LWIP_REV,
+    },
 }
 
 
@@ -77,10 +83,15 @@ class Paths:
         self.deploy = Path(os.environ.get("UNMATCHED_LITE_DEPLOY", default_deploy))
         self.opensbi_src = self.src / "opensbi"
         self.uboot_src = self.src / "u-boot"
+        self.uboot_lwip_port_src = self.src / "u-boot-lwip-port"
         self.linux_src = self.src / "linux"
+        self.lwip_src = self.src / "lwip"
         self.busybox_src = self.src / "busybox"
         self.opensbi_out = self.out / "opensbi"
         self.uboot_out = self.out / "u-boot"
+        self.uboot_mmode_out = self.out / "u-boot-mmode"
+        self.uboot_lwip_out = self.out / "u-boot-lwip"
+        self.uboot_lwip_port_out = self.out / "u-boot-lwip-port"
         self.qemu_uboot_out = self.out / "u-boot-qemu"
         self.linux_out = self.out / "linux"
         self.busybox_out = self.out / "busybox"
@@ -101,6 +112,10 @@ class Paths:
         self.uboot_patch2 = self.repo / "patches/u-boot/2026.01/0006-pcie-fu740-debug-trace.patch"
         self.uboot_patch3 = self.repo / "patches/u-boot/2026.01/0007-unmatched-tftp-and-opensbi-prints.patch"
         self.uboot_patch4 = self.repo / "patches/u-boot/2026.01/0008-unmatched-enable-spl-debug-logs.patch"
+        self.uboot_patch5 = self.repo / "patches/u-boot/2026.01/0009-riscv-support-direct-m-mode-u-boot-fit.patch"
+        self.uboot_lwip_port = self.repo / "ports/uboot-lwip"
+        self.uboot_lwip_port_overlay = self.uboot_lwip_port / "overlay"
+        self.uboot_lwip_port_patch = self.uboot_lwip_port / "u-boot-integration.patch"
         self.linux_patch = self.repo / "patches/linux/6.18/0001-riscv-dts-sifive-unmatched-keep-leds-settings.patch"
         self.linux_patch2 = self.repo / "patches/linux/6.18/0002-pcie-fu740-debug-trace.patch"
 
@@ -145,6 +160,11 @@ def prepend_path(env, path):
         env["PATH"] = str(path) + os.pathsep + env.get("PATH", "")
 
 
+def append_path(env, path):
+    if path.is_dir():
+        env["PATH"] = env.get("PATH", "") + os.pathsep + str(path)
+
+
 def native_flex_shim(paths, env):
     flex = shutil.which("flex", path=env.get("PATH"))
     m4 = shutil.which("m4", path=env.get("PATH"))
@@ -174,8 +194,10 @@ def build_env(paths, toolchain):
     host_cflags = []
     host_ldflags = []
 
+    # Cross tools use prefixed names. Keep host as/ld ahead of SDK aliases;
+    # cross gcc receives its private unprefixed binutils through -B below.
     for path in toolchain.toolchain_bindirs:
-        prepend_path(env, path)
+        append_path(env, path)
     for path in toolchain.native_bindirs:
         prepend_path(env, path)
     for sysroot in toolchain.native_sysroot_dirs:
@@ -518,26 +540,33 @@ def apply_patch_once(src, patch):
     run(["git", "apply", str(patch)], cwd=src)
 
 
+def _apply_unmatched_uboot_patches(paths, source):
+    apply_patch_once(source, paths.uboot_patch)
+    if paths.uboot_patch2.exists():
+        apply_patch_once(source, paths.uboot_patch2)
+    if paths.uboot_patch3.exists():
+        apply_patch_once(source, paths.uboot_patch3)
+    apply_patch_once(source, paths.uboot_patch4)
+    apply_patch_once(source, paths.uboot_patch5)
+
+
 def fetch(paths, only=None, dev=False):
-    selected = only or ("opensbi", "u-boot", "linux")
+    selected = only or ("opensbi", "u-boot", "linux", "lwip")
     for key in selected:
         if key == "opensbi":
             git_checkout(paths, key, paths.opensbi_src, dev=dev)
         elif key == "u-boot":
             git_checkout(paths, key, paths.uboot_src, dev=dev)
             if paths.profile == "unmatched":
-                apply_patch_once(paths.uboot_src, paths.uboot_patch)
-                if paths.uboot_patch2.exists():
-                    apply_patch_once(paths.uboot_src, paths.uboot_patch2)
-                if paths.uboot_patch3.exists():
-                    apply_patch_once(paths.uboot_src, paths.uboot_patch3)
-                apply_patch_once(paths.uboot_src, paths.uboot_patch4)
+                _apply_unmatched_uboot_patches(paths, paths.uboot_src)
         elif key == "linux":
             git_checkout(paths, key, paths.linux_src, dev=dev)
             if paths.profile == "unmatched":
                 apply_patch_once(paths.linux_src, paths.linux_patch)
             if paths.linux_patch2.exists():
                 apply_patch_once(paths.linux_src, paths.linux_patch2)
+        elif key == "lwip":
+            git_checkout(paths, key, paths.lwip_src, dev=dev)
         else:
             raise SystemExit(f"Unknown source key: {key}")
 
@@ -571,10 +600,11 @@ def build_opensbi(paths, env):
         copy_artifact(fwdir / name, paths.deploy / name)
 
 
-def _uboot_make_base(paths, env, output):
+def _uboot_make_base(paths, env, output, source=None):
+    source = source or paths.uboot_src
     return [
         "make",
-        "-C", paths.uboot_src,
+        "-C", source,
         f"O={output}",
         "ARCH=riscv",
         f"CROSS_COMPILE={env['CROSS_COMPILE']}",
@@ -582,42 +612,192 @@ def _uboot_make_base(paths, env, output):
     ]
 
 
-def build_uboot(paths, env, dev=False):
+def build_uboot(paths, env, dev=False, lwip=False, mmode=False):
+    if dev and (lwip or mmode):
+        raise SystemExit("U-Boot variants do not support dev mode")
+    if lwip and mmode:
+        raise SystemExit("The lwIP and M-mode U-Boot variants are separate")
+
     fetch(paths, ("u-boot",), dev=dev)
-    require_tools(["make", "bc", "bison", "flex"], env)
+    require_tools(["make", "bc", "bison", "flex", "swig"], env)
     require_cross(env)
 
-    make_base = _uboot_make_base(paths, env, paths.uboot_out)
+    if mmode:
+        output = paths.uboot_mmode_out
+        artifact_dir = paths.deploy / "mmode"
+    elif lwip:
+        output = paths.uboot_lwip_out
+        artifact_dir = paths.deploy / "lwip"
+    else:
+        output = paths.uboot_out
+        artifact_dir = paths.deploy
+    make_base = _uboot_make_base(paths, env, output)
     if paths.profile == "qemu":
+        if lwip or mmode:
+            raise SystemExit("U-Boot variants are only available for Unmatched")
         run(make_base + ["qemu-riscv64_smode_defconfig"], env=env)
-        _set_config_option(paths.uboot_out / ".config", "CONFIG_BOOTDELAY", "5")
+        _set_config_option(output / ".config", "CONFIG_BOOTDELAY", "5")
         run(make_base + ["olddefconfig"], env=env)
         run(make_base + ["-j", jobs()], env=env)
-        copy_artifact(paths.uboot_out / "u-boot.bin", paths.qemu_uboot_bin)
+        copy_artifact(output / "u-boot.bin", paths.qemu_uboot_bin)
         return
 
-    if not (paths.deploy / "fw_dynamic.bin").exists():
+    if not mmode and not (paths.deploy / "fw_dynamic.bin").exists():
         build_opensbi(paths, env)
 
-    config_dot = paths.uboot_out / ".config"
+    config_dot = output / ".config"
     if dev and config_dot.exists():
         say(f"DEV preserve existing U-Boot .config: {config_dot}")
         run(make_base + ["olddefconfig"], env=env)
     else:
         run(make_base + ["sifive_unmatched_defconfig"], env=env)
         _set_config_option(config_dot, "CONFIG_BOOTDELAY", "5")
+        if mmode:
+            _set_config_option(config_dot, "CONFIG_RISCV_SMODE", "n")
+            _set_config_option(config_dot, "CONFIG_RISCV_MMODE", "y")
+            # This lab only needs the U-Boot shell, network stack, and `go`;
+            # OS and EFI boot remain the default OpenSBI/S-mode build's job.
+            _set_config_option(config_dot, "CONFIG_EFI_LOADER", "n")
+            _set_config_option(config_dot, "CONFIG_TOOLS_MKEFICAPSULE", "n")
+        elif lwip:
+            for name, value in (
+                ("CONFIG_NET", "n"),
+                ("CONFIG_NET_LWIP", "y"),
+                ("CONFIG_CMD_DNS", "y"),
+                ("CONFIG_CMD_WGET", "y"),
+            ):
+                _set_config_option(config_dot, name, value)
         run(make_base + ["olddefconfig"], env=env)
 
+    if mmode:
+        config_lines = set(config_dot.read_text(encoding="utf-8").splitlines())
+        for required in ("CONFIG_RISCV_MMODE=y", "CONFIG_RISCV_ACLINT=y"):
+            if required not in config_lines:
+                raise SystemExit(f"M-mode U-Boot configuration is missing: {required}")
+        for forbidden in (
+            "CONFIG_RISCV_SMODE=y", "CONFIG_SBI=y", "CONFIG_SPL_OPENSBI=y",
+        ):
+            if forbidden in config_lines:
+                raise SystemExit(f"M-mode U-Boot configuration retained: {forbidden}")
+
+    make_args = ["-j", jobs()]
+    if not mmode:
+        make_args.append(f"OPENSBI={paths.deploy / 'fw_dynamic.bin'}")
+    run(make_base + make_args, env=env)
+
+    copy_artifact(output / "spl/u-boot-spl.bin", artifact_dir / "u-boot-spl.bin")
+    copy_artifact(output / "u-boot.itb", artifact_dir / "u-boot.itb")
+    if mmode:
+        build_unmatched_firmware_fit(
+            paths,
+            env,
+            uboot_out=output,
+            artifact_dir=artifact_dir,
+            output=artifact_dir / "unmatched-mmode-firmware.itb",
+            title="HiFive Unmatched M-mode SPL and U-Boot update",
+            uboot_description="M-mode U-Boot FIT",
+            update_payload_description="M-mode U-Boot",
+        )
+    elif lwip:
+        build_unmatched_firmware_fit(
+            paths,
+            env,
+            uboot_out=output,
+            artifact_dir=artifact_dir,
+            output=artifact_dir / "unmatched-firmware.itb",
+        )
+    else:
+        build_unmatched_firmware_fit(paths, env)
+
+
+def prepare_uboot_lwip_port(paths):
+    """Create a reproducible U-Boot tree containing the external lwIP port."""
+    git_checkout(paths, "lwip", paths.lwip_src)
+    if not (paths.uboot_lwip_port_src / ".git").exists() and (
+        paths.uboot_src / ".git"
+    ).exists():
+        # A full U-Boot history is large.  Reuse the local object database for
+        # this generated sibling tree, while retaining the official remote for
+        # fetching a missing pinned commit.
+        run([
+            "git", "clone", "--shared", paths.uboot_src,
+            paths.uboot_lwip_port_src,
+        ])
+        run([
+            "git", "remote", "set-url", "origin", REPOS["u-boot"]["url"],
+        ], cwd=paths.uboot_lwip_port_src)
+    git_checkout(paths, "u-boot", paths.uboot_lwip_port_src)
+    _apply_unmatched_uboot_patches(paths, paths.uboot_lwip_port_src)
+    apply_patch_once(paths.uboot_lwip_port_src, paths.uboot_lwip_port_patch)
+
+    shutil.copytree(
+        paths.uboot_lwip_port_overlay,
+        paths.uboot_lwip_port_src,
+        dirs_exist_ok=True,
+    )
+
+    # Keep the official checkout pristine.  Only its src/ subtree is copied
+    # into the generated U-Boot tree consumed by Kbuild.
+    destination = paths.uboot_lwip_port_src / "lib/lwip-port/lwip"
+    if destination.exists():
+        shutil.rmtree(destination)
+    destination.mkdir(parents=True)
+    shutil.copytree(paths.lwip_src / "src", destination / "src")
+    shutil.copy2(paths.lwip_src / "COPYING", destination / "COPYING")
+
+    version_header = paths.uboot_lwip_port_src / "include/lwip-port-version.h"
+    version_header.write_text(
+        "/* Generated by scripts/litebuild.py. */\n"
+        "#ifndef __UBOOT_LWIP_PORT_VERSION_H\n"
+        "#define __UBOOT_LWIP_PORT_VERSION_H\n"
+        f'#define LWIP_PORT_SOURCE_REV "{LWIP_REV}"\n'
+        "#endif\n",
+        encoding="ascii",
+    )
+
+
+def build_uboot_lwip_port(paths, env):
+    if paths.profile != "unmatched":
+        raise SystemExit("The standalone lwIP port is only available for Unmatched")
+
+    prepare_uboot_lwip_port(paths)
+    require_tools(["make", "bc", "bison", "flex", "swig"], env)
+    require_cross(env)
+    if not (paths.deploy / "fw_dynamic.bin").exists():
+        build_opensbi(paths, env)
+
+    output = paths.uboot_lwip_port_out
+    artifact_dir = paths.deploy / "lwip-port"
+    make_base = _uboot_make_base(
+        paths, env, output, source=paths.uboot_lwip_port_src
+    )
+    run(make_base + ["sifive_unmatched_defconfig"], env=env)
+    config = output / ".config"
+    for name, value in (
+        ("CONFIG_BOOTDELAY", "5"),
+        ("CONFIG_NET", "y"),
+        ("CONFIG_PROT_TCP", "n"),
+        ("CONFIG_CMD_WGET", "n"),
+        ("CONFIG_CMD_LWIP_PORT", "y"),
+    ):
+        _set_config_option(config, name, value)
+    run(make_base + ["olddefconfig"], env=env)
     run(make_base + ["-j", jobs(), f"OPENSBI={paths.deploy / 'fw_dynamic.bin'}"], env=env)
 
-    copy_artifact(paths.uboot_out / "spl/u-boot-spl.bin", paths.deploy / "u-boot-spl.bin")
-    copy_artifact(paths.uboot_out / "u-boot.itb", paths.deploy / "u-boot.itb")
-    build_unmatched_firmware_fit(paths, env)
+    copy_artifact(output / "spl/u-boot-spl.bin", artifact_dir / "u-boot-spl.bin")
+    copy_artifact(output / "u-boot.itb", artifact_dir / "u-boot.itb")
+    build_unmatched_firmware_fit(
+        paths,
+        env,
+        uboot_out=output,
+        artifact_dir=artifact_dir,
+        output=artifact_dir / "unmatched-firmware.itb",
+    )
 
 
 def build_qemu_uboot(paths, env):
     fetch(paths, ("u-boot",))
-    require_tools(["make", "bc", "bison", "flex"], env)
+    require_tools(["make", "bc", "bison", "flex", "swig"], env)
     require_cross(env)
 
     make_base = _uboot_make_base(paths, env, paths.qemu_uboot_out)
@@ -759,8 +939,8 @@ def build_unmatched_fit(paths, env):
     say(f"DEPLOY {paths.unmatched_fit}")
 
 
-def _unmatched_firmware_update_cmd():
-    return """setenv firmware_addr_r 0x84000000 &&
+def _unmatched_firmware_update_cmd(payload_description="U-Boot and OpenSBI"):
+    script = """setenv firmware_addr_r 0x84000000 &&
 setenv spl_update_addr_r 0x82000000 &&
 setenv uboot_update_addr_r 0x82400000 &&
 setenv firmware_verify_addr_r 0x83000000 &&
@@ -787,7 +967,7 @@ part start mmc ${firmware_mmcdev} ${firmware_uboot_part} uboot_update_start &&
 part size mmc ${firmware_mmcdev} ${firmware_uboot_part} uboot_partition_blocks &&
 itest ${spl_update_blocks} -le ${spl_partition_blocks} &&
 itest ${uboot_update_blocks} -le ${uboot_partition_blocks} &&
-echo Writing U-Boot and OpenSBI to MMC ${firmware_mmcdev}:${firmware_uboot_part}... &&
+echo Writing @PAYLOAD@ to MMC ${firmware_mmcdev}:${firmware_uboot_part}... &&
 mmc write ${uboot_update_addr_r} ${uboot_update_start} ${uboot_update_blocks} &&
 mmc read ${firmware_verify_addr_r} ${uboot_update_start} ${uboot_update_blocks} &&
 cmp.b ${uboot_update_addr_r} ${firmware_verify_addr_r} ${uboot_update_size} &&
@@ -797,13 +977,20 @@ mmc read ${firmware_verify_addr_r} ${spl_update_start} ${spl_update_blocks} &&
 cmp.b ${spl_update_addr_r} ${firmware_verify_addr_r} ${spl_update_size} &&
 echo Firmware update verified - reset the board
 """
+    return script.replace("@PAYLOAD@", payload_description)
 
 
-def _unmatched_firmware_fit_its(spl, uboot, update_script):
+def _unmatched_firmware_fit_its(
+    spl,
+    uboot,
+    update_script,
+    title="HiFive Unmatched SPL, OpenSBI, and U-Boot update",
+    uboot_description="OpenSBI and U-Boot FIT",
+):
     return f"""/dts-v1/;
 
 / {{
-  description = "HiFive Unmatched SPL, OpenSBI, and U-Boot update";
+  description = "{title}";
   #address-cells = <2>;
 
   images {{
@@ -820,7 +1007,7 @@ def _unmatched_firmware_fit_its(spl, uboot, update_script):
     }};
 
     uboot {{
-      description = "OpenSBI and U-Boot FIT";
+      description = "{uboot_description}";
       data = /incbin/("{uboot}");
       type = "firmware";
       arch = "riscv";
@@ -856,17 +1043,31 @@ def _unmatched_firmware_fit_its(spl, uboot, update_script):
 """
 
 
-def build_unmatched_firmware_fit(paths, env):
+def build_unmatched_firmware_fit(
+    paths,
+    env,
+    uboot_out=None,
+    artifact_dir=None,
+    output=None,
+    title="HiFive Unmatched SPL, OpenSBI, and U-Boot update",
+    uboot_description="OpenSBI and U-Boot FIT",
+    update_payload_description="U-Boot and OpenSBI",
+):
     if paths.profile != "unmatched":
         raise SystemExit("firmware-fit is only available for the unmatched profile")
 
-    mkimage = paths.uboot_out / "tools/mkimage"
+    work_dir = uboot_out or paths.out
+    uboot_out = uboot_out or paths.uboot_out
+    artifact_dir = artifact_dir or paths.deploy
+    output = output or paths.unmatched_firmware_fit
+
+    mkimage = uboot_out / "tools/mkimage"
     if not mkimage.is_file():
         raise SystemExit("U-Boot mkimage is missing; build U-Boot before the firmware FIT")
 
     artifacts = (
-        (paths.deploy / "u-boot-spl.bin", (SPL_END - SPL_START + 1) * SECTOR_SIZE),
-        (paths.deploy / "u-boot.itb", (UBOOT_END - UBOOT_START + 1) * SECTOR_SIZE),
+        (artifact_dir / "u-boot-spl.bin", (SPL_END - SPL_START + 1) * SECTOR_SIZE),
+        (artifact_dir / "u-boot.itb", (UBOOT_END - UBOOT_START + 1) * SECTOR_SIZE),
     )
     for artifact, partition_size in artifacts:
         if not artifact.is_file():
@@ -876,20 +1077,29 @@ def build_unmatched_firmware_fit(paths, env):
 
     padded_artifacts = []
     for artifact, _ in artifacts:
-        padded = paths.out / f"{artifact.name}.update"
+        padded = work_dir / f"{artifact.name}.update"
         data = artifact.read_bytes()
         padded.write_bytes(data + bytes(-len(data) % SECTOR_SIZE))
         padded_artifacts.append(padded)
 
-    update_script = paths.out / "unmatched-firmware-update.cmd"
-    update_script.write_text(_unmatched_firmware_update_cmd(), encoding="ascii")
-    its = paths.out / "unmatched-firmware.its"
-    its.write_text(
-        _unmatched_firmware_fit_its(*padded_artifacts, update_script),
+    update_script = work_dir / "unmatched-firmware-update.cmd"
+    update_script.write_text(
+        _unmatched_firmware_update_cmd(update_payload_description),
         encoding="ascii",
     )
-    run([mkimage, "-f", its, paths.unmatched_firmware_fit], env=env)
-    say(f"DEPLOY {paths.unmatched_firmware_fit}")
+    its = work_dir / "unmatched-firmware.its"
+    its.write_text(
+        _unmatched_firmware_fit_its(
+            *padded_artifacts,
+            update_script,
+            title=title,
+            uboot_description=uboot_description,
+        ),
+        encoding="ascii",
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    run([mkimage, "-f", its, output], env=env)
+    say(f"DEPLOY {output}")
 
 
 def _qemu_boot_cmd():
@@ -1133,15 +1343,27 @@ def print_info(paths, env):
     print(f"  OpenSBI {OPEN_SBI_REV}")
     print(f"  U-Boot  {U_BOOT_REV}")
     print(f"  Linux   {LINUX_REV}")
+    print(f"  lwIP    {LWIP_REV}")
 
 
 def check(paths, env):
     print_info(paths, env)
-    require_tools(["git", "make", "bc", "bison", "flex", "mke2fs", "debugfs", "sgdisk", "openssl"], env)
+    require_tools([
+        "git", "make", "bc", "bison", "flex", "swig", "mke2fs", "debugfs",
+        "sgdisk", "openssl",
+    ], env)
     require_cross(env)
     inputs = [paths.rootfs_overlay]
     if paths.profile == "unmatched":
-        inputs += [paths.uboot_patch, paths.uboot_patch4, paths.linux_patch, paths.linux_defconfig]
+        inputs += [
+            paths.uboot_patch,
+            paths.uboot_patch4,
+            paths.uboot_patch5,
+            paths.uboot_lwip_port_overlay,
+            paths.uboot_lwip_port_patch,
+            paths.linux_patch,
+            paths.linux_defconfig,
+        ]
         if paths.uboot_patch2.exists():
             inputs.append(paths.uboot_patch2)
         if paths.uboot_patch3.exists():
@@ -1165,7 +1387,7 @@ def clean(paths):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=[
-        "info", "check", "fetch", "opensbi", "u-boot", "qemu-u-boot", "linux", "busybox", "rootfs",
+        "info", "check", "fetch", "opensbi", "u-boot", "u-boot-mmode", "u-boot-lwip", "u-boot-lwip-port", "qemu-u-boot", "linux", "busybox", "rootfs",
         "fit", "firmware-fit", "bootchain", "sd-image", "qemu-image", "dev-linux", "dev-uboot", "clean", "stamp",
     ])
     parser.add_argument("--profile", choices=["unmatched", "qemu"], default="unmatched")
@@ -1191,6 +1413,12 @@ def main():
         build_opensbi(paths, env)
     elif args.command == "u-boot":
         build_uboot(paths, env)
+    elif args.command == "u-boot-mmode":
+        build_uboot(paths, env, mmode=True)
+    elif args.command == "u-boot-lwip":
+        build_uboot(paths, env, lwip=True)
+    elif args.command == "u-boot-lwip-port":
+        build_uboot_lwip_port(paths, env)
     elif args.command == "qemu-u-boot":
         build_qemu_uboot(paths, env)
     elif args.command == "linux":

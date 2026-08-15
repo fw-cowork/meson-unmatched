@@ -2,6 +2,8 @@
 
 本目录存放由 U-Boot `go` 命令调用的独立裸机程序。架构入口、SoC、驱动、通用库和
 应用分别管理；每个应用在自己的目录中声明需要链接的组件。
+整体设计、运行时约束和扩展规则见
+[裸机程序设计](../docs/architecture/baremetal-design.md)。
 
 ```text
 baremetal/
@@ -16,14 +18,16 @@ baremetal/
 ├── drivers/pwm/                可复用的 SiFive PWM 驱动
 │   ├── sifive_pwm_math.c       频率和占空比换算
 │   └── sifive_pwm.c            PWM 寄存器配置
+├── drivers/serial/             可复用的 SiFive UART 轮询驱动
+│   └── sifive_uart.c           配置、收发和基础输出格式化
 ├── include/                    按层命名空间组织的公共 API
 │   ├── baremetal/              类型、MMIO、字符串和应用入口
 │   ├── drivers/                驱动接口
 │   └── soc/                    SoC 接口
 ├── apps/                       板端应用及其 Meson 依赖清单
-│   └── unmatched-led/
-│       ├── main.c
-│       └── README.md
+│   ├── unmatched-led/          D2 RGB LED 应用
+│   ├── unmatched-tests/        U-Boot go 板级测试
+│   └── unmatched-mmode-check/  M-mode CSR 访问检查
 ├── tests/                      可在主机运行的纯算法测试
 └── tools/                      镜像检查等构建辅助工具
 ```
@@ -34,7 +38,7 @@ baremetal/
 
 - `arch/riscv/cpu/` 拥有 RISC-V 入口、链接布局、BSS 初始化和返回 U-Boot 的 ABI 处理。
 - `soc/` 拥有 FU740 地址空间和 PRCI 等 SoC 专属逻辑，不处理 D2 等板级功能。
-- `drivers/` 拥有 SiFive PWM IP 的计算和寄存器操作，不写死 FU740 实例基地址。
+- `drivers/` 拥有 SiFive PWM/UART IP 的计算和寄存器操作，不写死 FU740 实例基地址。
 - `apps/` 拥有命令行、D2 通道映射和测试模式，并显式选择链接组件。
 - `tests/` 只在主机执行不访问 MMIO 的纯逻辑；镜像验证脚本归 `tools/`。
 
@@ -87,6 +91,18 @@ standalone 示例更简单，直接把应用 C 函数设为入口，通过 `-Tte
 ./build.sh unmatched-led-artifacts
 ```
 
+只构建需要在 Unmatched 上运行的板级测试镜像：
+
+```bash
+./build.sh unmatched-tests-artifacts
+```
+
+只构建用于验证 U-Boot M-mode 调用链的 CSR 检查镜像：
+
+```bash
+./build.sh unmatched-mmode-check-artifacts
+```
+
 运行不需要开发板的公共算法测试：
 
 ```bash
@@ -96,18 +112,35 @@ standalone 示例更简单，直接把应用 C 函数设为入口，通过 `-Tte
 该测试使用主机 C 编译器，覆盖 PWM scale 选择、`pwmzerocmp` 周期换算、占空比
 换算和非法输入的边界行为。Meson 仍需要先用项目交叉编译配置完成初始化。
 
+新开发机和 CI 也必须使用 `riscv64-freedomusdk-linux-*`。优先安装团队共享的
+Yocto `populate_sdk` 安装器，再运行测试：
+
+```bash
+./build.sh toolchain /path/to/freedom-u-sdk-toolchain.sh
+./build.sh test
+```
+
+没有共享安装器时，执行 `./build.sh toolchain` 从固定的 Freedom-U-SDK 2026.01.00
+源码生成。`test` 使用独立的 `builddir-test/`，运行上述主机测试，并用与正式构建
+相同的工具链交叉编译 `unmatched-tests`，检查入口地址和重定位。MMIO 用例仍需在
+真实 Unmatched 上由 U-Boot `go` 执行。
+
 `unmatched-led-bin` 仍可用于只生成板端加载的 `.bin`。
 
 生成文件位于 Meson 构建目录：
 
 ```text
-builddir/baremetal/unmatched-led.bin   U-Boot 加载的原始二进制
-builddir/baremetal/unmatched-led.elf   调试符号和 ELF 元数据
-builddir/baremetal/unmatched-led.map   GNU ld 链接映射
-builddir/baremetal/unmatched-led.dis   带源码行的反汇编
-builddir/baremetal/unmatched-led.sym   按地址排序的符号表
-builddir/baremetal/unmatched-led.check 入口地址和重定位检查标记
+builddir/baremetal/unmatched-led/unmatched-led.bin   U-Boot 加载的原始二进制
+builddir/baremetal/unmatched-led/unmatched-led.elf   调试符号和 ELF 元数据
+builddir/baremetal/unmatched-led/unmatched-led.map   GNU ld 链接映射
+builddir/baremetal/unmatched-led/unmatched-led.dis   带源码行的反汇编
+builddir/baremetal/unmatched-led/unmatched-led.sym   按地址排序的符号表
+builddir/baremetal/unmatched-led/unmatched-led.check 入口地址和重定位检查标记
 ```
+
+每个应用都拥有 `builddir/baremetal/<app-name>/` 独立产物目录；`unmatched-tests` 使用
+相同命名规则。具体命令、用例和返回码见
+[`apps/unmatched-tests/README.md`](apps/unmatched-tests/README.md)。
 
 程序使用与当前 U-Boot 相同的 `rv64imafdc/lp64d` ABI，固定链接到
 `0x84000000`。链接脚本检查完整运行时镜像不超过 64 KiB；构建产物检查还会确认
@@ -155,8 +188,10 @@ RISC-V ABI 用 `a0` 传递 `argc`、`a1` 传递 `argv`。`start.S` 清零 `.bss`
 
 这个程序虽然是 freestanding bare-metal 程序，却不是从芯片复位后独立运行的完整
 固件。它沿用 U-Boot 已经初始化的 DDR、时钟、引脚复用、当前栈和执行特权级。
-Unmatched U-Boot 配置为 S-mode，因此这些程序也在 S-mode 执行，不能把 M-mode 专用
-CSR 当作可直接访问的寄存器。
+默认 Unmatched U-Boot 配置为 S-mode，因此普通构建下这些程序也在 S-mode 执行。
+独立的 `u-boot-mmode` 变体由 M-mode U-Boot 直接调用，payload 也随之在 M-mode
+执行；详细构建、更新和验证步骤见
+[U-Boot M-mode baremetal 实验](../docs/boot/uboot-mmode-baremetal.md)。
 
 ## 为什么 bare-metal 程序能返回 U-Boot
 
@@ -200,10 +235,21 @@ U-Boot 后继续运行。对时钟、中断、缓存、页表或 trap 配置的�
 ## 公共 API
 
 `include/baremetal/` 提供基础类型、32 位 MMIO 读写、I/O fence、`BM_ARRAY_SIZE()`、
-不依赖 libc 的 `bm_streq()` 以及应用入口约定。`include/soc/fu740.h` 提供 PWM0/PWM1
-基地址以及 `fu740_pclk_rate()`，后者读取 U-Boot 留下的 PRCI 配置并计算当前外设时钟。
+不依赖 libc 的 `bm_streq()` 以及应用入口约定。`include/soc/fu740.h` 提供 UART0/UART1、
+PWM0/PWM1 基地址以及 `fu740_pclk_rate()`，后者读取 U-Boot 留下的 PRCI 配置并计算
+当前外设时钟。
 `include/drivers/sifive_pwm.h` 把与具体负载无关的 PWM 频率、占空比和寄存器配置接口
 集中到公共层。
+
+`include/drivers/sifive_uart.h` 提供 SiFive UART 的轮询接口。U-Boot `go` 应用可以直接
+复用已初始化的 `FU740_CONSOLE_UART_BASE`，不要再次修改波特率；从复位入口运行的程序
+才需要用 `fu740_pclk_rate()` 和目标波特率调用 `sifive_uart_configure()`。
+
+```c
+sifive_uart_puts(FU740_CONSOLE_UART_BASE, "value = ");
+sifive_uart_put_hex_ulong(FU740_CONSOLE_UART_BASE, value);
+sifive_uart_puts(FU740_CONSOLE_UART_BASE, "\n");
+```
 
 - `sifive_pwm_scale_for_frequency()` 为自然回绕模式选择最接近目标频率的
   `pwmscale`。
@@ -252,8 +298,9 @@ sifive_pwm_apply(FU740_PWM1_BASE, &config);
    }]
    ```
 
-   需要 FU740 寄存器或 PWM 时，再显式加入 `baremetal_fu740_dep` 或
-   `baremetal_sifive_pwm_dep`。不使用的组件不会进入该程序的链接输入。
+   需要 FU740 寄存器、PWM 或 UART 时，再显式加入 `baremetal_fu740_dep`、
+   `baremetal_sifive_pwm_dep` 或 `baremetal_sifive_uart_dep`。不使用的组件不会进入该程序
+   的链接输入。
 
 3. 执行 `./build.sh baremetal`，或构建 `<输出名>-artifacts`。只需要板端原始镜像时
    可以构建 `<输出名>-bin`。
@@ -263,7 +310,8 @@ sifive_pwm_apply(FU740_PWM1_BASE, &config);
 统一加载地址或最大镜像大小，只修改 `arch/riscv/cpu/u-boot-go.lds`。
 
 当前示例及其板端运行方法见
-[apps/unmatched-led/README.md](apps/unmatched-led/README.md)。
+[apps/unmatched-led/README.md](apps/unmatched-led/README.md)。需要验证 MMIO 和真实硬件的
+测试程序见 [apps/unmatched-tests/README.md](apps/unmatched-tests/README.md)。
 
 ## 添加主机测试
 

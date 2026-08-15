@@ -20,6 +20,23 @@ cd /home/adrian/devel/riscv/meson-unmatched
 该步骤需要较大的磁盘空间和较长时间。工具链生成完成后，后续普通构建不再依赖
 父目录中的 KAS 工程。
 
+## 其他机器上的快速测试
+
+开发机和 CI 与正式构建使用同一套 `riscv64-freedomusdk-linux-*` 工具链。推荐把
+一次 `populate_sdk` 生成的安装器存入团队制品库，新机器下载后执行：
+
+```bash
+./build.sh toolchain /path/to/freedom-u-sdk-toolchain.sh
+./build.sh test
+```
+
+若没有共享安装器，执行 `./build.sh toolchain` 从固定的 Freedom-U-SDK 2026.01.00
+源码生成；命令会打印可供其他机器复用的安装器路径。
+
+`test` 使用独立的 `builddir-test/`，运行主机算法测试，同时生成并静态检查
+`unmatched-tests.elf/.bin`。这覆盖可移植逻辑、RISC-V 编译、链接入口和重定位；
+PRCI/PWM 的真实 MMIO 行为仍需把 BIN 下载到 Unmatched 后通过 U-Boot `go` 验证。
+
 ## 构建框架和目录
 
 统一入口是 `build.sh`。它先用 Meson 配置构建目录，再由 Ninja 调用
@@ -52,12 +69,16 @@ file 声明的编译器：
 ```bash
 ./build.sh opensbi-fw      # OpenSBI 固件
 ./build.sh u-boot          # U-Boot SPL + proper；缺少 OpenSBI 时也会编译它
+./build.sh u-boot-mmode    # SPL + M-mode U-Boot proper；不经过 OpenSBI
+./build.sh u-boot-lwip     # 独立的 U-Boot lwIP 实验镜像
 ./build.sh linux           # Linux Image.gz + Unmatched DTB
 ./build.sh fit             # 将已有 Image.gz 和 Unmatched DTB 打包为 FIT
 ./build.sh firmware-fit    # 将已有 SPL 和 u-boot.itb 打包为固件更新 FIT
 ./build.sh baremetal       # 全部 U-Boot go 裸机程序
 ./build.sh baremetal-test  # 主机上的裸机公共算法测试
 ./build.sh unmatched-led-artifacts # D2 RGB LED 的全部分析产物
+./build.sh unmatched-tests-artifacts # FU740 板级测试镜像及分析产物
+./build.sh unmatched-mmode-check-artifacts # M-mode CSR 检查镜像
 ./build.sh rootfs          # BusyBox rootfs
 ./build.sh bootchain       # OpenSBI + U-Boot + Linux
 ./build.sh                 # 完整物理板 SD 卡镜像
@@ -77,15 +98,75 @@ rootfs.ext4
 unmatched-lite.img
 ```
 
+### U-Boot lwIP 实验构建
+
+上游 U-Boot 2026.01 已集成 lwIP。本项目保留默认的 U-Boot 网络栈，并提供独立
+目标验证 Unmatched 网卡驱动与 lwIP 的组合：
+
+```bash
+./build.sh u-boot-lwip
+```
+
+该目标和普通 U-Boot 构建一样需要主机上的 `bison`、`flex`、`swig` 和 GnuTLS
+开发头文件；它们不是 RISC-V 交叉工具链的一部分。
+
+该目标从同一个 `sifive_unmatched_defconfig` 生成配置，改用
+`CONFIG_NET_LWIP=y`，并启用 DNS 和 HTTP `wget`。构建目录和产物不会覆盖默认
+U-Boot：
+
+```text
+out/u-boot-lwip/.config
+deploy/lwip/u-boot-spl.bin
+deploy/lwip/u-boot.itb
+deploy/lwip/unmatched-firmware.itb
+```
+
+把最后一个文件以独立名称放入 TFTP 根目录，保留默认固件作为回退，然后在当前
+U-Boot 中执行：
+
+```text
+=> setenv firmware_fit unmatched-firmware-lwip.itb
+=> run tftp_update_firmware
+```
+
+首次测试前应保留可重新写卡的默认 `deploy/unmatched-firmware.itb`。
+
+更新到板卡后依次验证：
+
+```text
+=> dhcp
+=> ping ${serverip}
+=> tftpboot ${loadaddr} test.bin
+=> wget ${loadaddr} http://192.168.1.23/test.bin
+```
+
+这个变体提供 DHCP、DNS、Ping、TFTP 和 HTTP 下载，但不提供 FTP 命令，也没有
+启用 HTTPS。`CONFIG_NET` 与 `CONFIG_NET_LWIP` 互斥，切换到 lwIP 后应在板卡上
+重新验证依赖旧网络栈的 PXE、NFS、网络控制台和上传流程，再考虑替换默认配置。
+
+### 从官方源码独立移植 lwIP
+
+用于学习移植过程的目标不会启用 U-Boot 内置 `CONFIG_NET_LWIP`，而是固定官方
+最新源码、生成独立 U-Boot 树，并编译本仓库自己的 netif 与应用适配层：
+
+```bash
+./build.sh u-boot-lwip-port
+```
+
+产物位于 `deploy/lwip-port/`。详细的源码流向、配置含义、TX/RX 所有权、NO_SYS
+轮询模型和上板测试步骤见
+[`docs/network/lwip-port.md`](../network/lwip-port.md)。两个 lwIP 目标都保留，前者
+用于观察 U-Boot 上游方案，后者用于逐层学习和修改移植代码。
+
 裸机产物位于 Meson 构建目录，例如：
 
 ```text
-builddir/baremetal/unmatched-led.elf
-builddir/baremetal/unmatched-led.bin
-builddir/baremetal/unmatched-led.map
-builddir/baremetal/unmatched-led.dis
-builddir/baremetal/unmatched-led.sym
-builddir/baremetal/unmatched-led.check
+builddir/baremetal/unmatched-led/unmatched-led.elf
+builddir/baremetal/unmatched-led/unmatched-led.bin
+builddir/baremetal/unmatched-led/unmatched-led.map
+builddir/baremetal/unmatched-led/unmatched-led.dis
+builddir/baremetal/unmatched-led/unmatched-led.sym
+builddir/baremetal/unmatched-led/unmatched-led.check
 ```
 
 裸机编译器、汇编器、链接器、`objcopy` 及 ISA/ABI 参数统一配置在 Meson cross
@@ -105,6 +186,8 @@ file；应用目录不保存工具链前缀或绝对路径。`build.sh` 会记�
 ```bash
 ./build.sh linux
 ./build.sh u-boot
+./build.sh u-boot-lwip
+./build.sh u-boot-lwip-port
 ./build.sh bootchain
 ./build.sh
 ./build.sh qemu

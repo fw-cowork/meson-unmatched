@@ -50,7 +50,7 @@ FW_DYNAMIC 的优势：SPL 可以在运行时决定 U-Boot proper 的入口地�
 
 ```c
 struct fw_dynamic_info {
-    unsigned long magic;      // 0x4942534 ("SBI" 魔数)
+    unsigned long magic;      // 0x4942534f ("OSBI" 魔数)
     unsigned long version;    // 2 (FW_DYNAMIC_INFO_VERSION)
     unsigned long next_addr;  // U-Boot proper 入口 (0x80200000)
     unsigned long next_mode;  // 1 = PRV_S (S-mode)
@@ -72,7 +72,7 @@ spl_invoke_opensbi(spl_image)
   ├─ 从 FIT 中定位 U-Boot proper 节点 (os="u-boot")
   ├─ 读取 entry 地址 → os_entry
   ├─ 构造 fw_dynamic_info:
-  │    .magic     = 0x4942534
+  │    .magic     = 0x4942534f
   │    .version   = 2
   │    .next_addr = os_entry          ← OpenSBI 完成后跳转目标
   │    .next_mode = 1                 ← PRV_S
@@ -213,6 +213,8 @@ gdb-multiarch deploy/fw_dynamic.elf
 
 ## 相关文档
 
+- [OpenSBI 资料区](../opensbi/README.md) — 官方资料、学习路线和版本固定
+- [OpenSBI 源码导读](../opensbi/source-guide.md) — firmware、trap/ecall、HART 和平台 hook
 - [启动链总览](boot-chain-overview.md) — OpenSBI 在整个启动链中的位置
 - [U-Boot SPL 代码解析](spl-analysis.md) §5 — `spl_invoke_opensbi` 调用流程
 - [PCIe 学习笔记](../pcie/pcie-study.md) §4 — OpenSBI 与 PCIe 的关系

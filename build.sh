@@ -10,16 +10,20 @@ NINJA_BIN="${NINJA:-ninja}"
 
 usage() {
     cat <<'EOF'
-Usage: ./build.sh [qemu] [target ...]
+Usage: ./build.sh [test|qemu] [target ...]
 
 Configure the Meson Unmatched build if necessary, then run Ninja.
 Without arguments, builds the Unmatched physical-board GPT SD image.
 Pass qemu to build the separate QEMU OpenSBI/U-Boot/Linux image.
+Pass test to run host tests and cross-build artifacts with Freedom-U-SDK.
 
 Common targets:
-  check, fetch-sources, opensbi-fw, u-boot, linux, fit, firmware-fit,
+  check, fetch-sources, opensbi-fw, u-boot, u-boot-mmode, u-boot-lwip, u-boot-lwip-port,
+  linux, fit, firmware-fit,
   dev-linux, dev-uboot,
   baremetal, baremetal-test, unmatched-led-bin, unmatched-led-artifacts,
+  unmatched-tests-bin, unmatched-tests-artifacts,
+  unmatched-mmode-check-bin, unmatched-mmode-check-artifacts,
   busybox, rootfs, bootchain, sd-image, qemu-image, clean-lite
 
 Dev targets (preserve source edits + .config for iteration):
@@ -27,9 +31,16 @@ Dev targets (preserve source edits + .config for iteration):
   dev-uboot    Incremental U-Boot build keeping src/u-boot/ modifications
 
 Examples:
-  ./build.sh toolchain  Download and install the pinned SiFive Linux SDK
+  ./build.sh toolchain  Build and install the pinned SiFive Linux SDK
+  ./build.sh toolchain /path/to/sdk.sh  Install a shared SDK installer
+  ./build.sh test       Test with riscv64-freedomusdk-linux tools
+  ./build.sh u-boot-mmode  Build SPL + M-mode U-Boot without OpenSBI
+  ./build.sh u-boot-lwip  Build the isolated Unmatched lwIP variant
+  ./build.sh u-boot-lwip-port  Rebuild U-Boot with the standalone latest-lwIP port
   ./build.sh baremetal  Build every U-Boot go bare-metal program
   ./build.sh baremetal-test  Run host-side bare-metal algorithm tests
+  ./build.sh unmatched-tests-artifacts  Build board-side test artifacts
+  ./build.sh unmatched-mmode-check-artifacts  Build the M-mode CSR probe
   ./build.sh          Build deploy/unmatched-lite.img for the FU740 board
   ./build.sh qemu     Build deploy/qemu/qemu-lite.img for QEMU virt
 
@@ -49,7 +60,25 @@ case "${1:-}" in
 esac
 
 if [[ "${1:-}" == toolchain ]]; then
-    exec "${SCRIPT_DIR}/toolchain.sh" setup
+    shift
+    if [[ "$#" -eq 0 ]]; then
+        exec "${SCRIPT_DIR}/toolchain.sh" setup
+    elif [[ "$#" -eq 1 ]]; then
+        exec "${SCRIPT_DIR}/toolchain.sh" install "$1"
+    fi
+    echo "toolchain accepts at most one SDK installer path" >&2
+    exit 2
+fi
+
+if [[ "${1:-}" == test ]]; then
+    shift
+    if [[ "$#" -ne 0 ]]; then
+        echo "test does not accept additional targets" >&2
+        exit 2
+    fi
+    BUILD_DIR="${UNMATCHED_LITE_BUILD_DIR:-${SCRIPT_DIR}/builddir-test}"
+    CROSS_FILE="${UNMATCHED_LITE_CROSS_FILE:-${DEFAULT_CROSS_FILE}}"
+    set -- baremetal-test unmatched-tests-artifacts
 fi
 
 PROFILE=unmatched
@@ -60,6 +89,13 @@ fi
 
 command -v "$MESON_BIN" >/dev/null
 command -v "$NINJA_BIN" >/dev/null
+
+if [[ "${CROSS_FILE}" == "${DEFAULT_CROSS_FILE}" ]] &&
+   ! "${SCRIPT_DIR}/toolchain.sh" status >/dev/null 2>&1; then
+    echo "Freedom-U-SDK toolchain is missing or incomplete." >&2
+    echo "Run ./build.sh toolchain, or install a shared SDK with ./build.sh toolchain /path/to/sdk.sh." >&2
+    exit 1
+fi
 
 cross_stamp="${BUILD_DIR}/.unmatched-cross-file"
 cross_digest="$(sha256sum "${CROSS_FILE}" | awk '{print $1}')"

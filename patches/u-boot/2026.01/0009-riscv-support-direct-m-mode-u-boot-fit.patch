@@ -1,0 +1,83 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: meson-unmatched <noreply@example.com>
+Date: Sat, 15 Aug 2026 00:00:00 +0800
+Subject: [PATCH] riscv: support direct M-mode U-Boot FIT
+
+Allow the generic RISC-V binman description to use U-Boot itself as the
+FIT firmware when SPL_OPENSBI is disabled.  This makes SPL jump directly
+to M-mode U-Boot instead of requiring an OpenSBI handoff.
+
+The FU740 needs the ACLINT implementation for U-Boot proper SMP/IPI
+operations in M-mode, where SBI services are unavailable.
+---
+ arch/riscv/cpu/fu740/Kconfig |  1 +
+ arch/riscv/dts/binman.dtsi   | 13 +++++++++++++
+ 2 files changed, 14 insertions(+)
+
+diff --git a/arch/riscv/cpu/fu740/Kconfig b/arch/riscv/cpu/fu740/Kconfig
+index d7ca9687171..76eb0b45c9e 100644
+--- a/arch/riscv/cpu/fu740/Kconfig
++++ b/arch/riscv/cpu/fu740/Kconfig
+@@ -11,6 +11,7 @@ config SIFIVE_FU740
+ 	imply CPU
+ 	imply CPU_RISCV
+ 	imply RISCV_TIMER if (RISCV_SMODE || SPL_RISCV_SMODE)
++	imply RISCV_ACLINT if RISCV_MMODE
+ 	imply SPL_RISCV_ACLINT
+ 	imply CMD_CPU
+ 	imply SPL_CPU
+diff --git a/arch/riscv/dts/binman.dtsi b/arch/riscv/dts/binman.dtsi
+index b518560bb94..ec164bc2c45 100644
+--- a/arch/riscv/dts/binman.dtsi
++++ b/arch/riscv/dts/binman.dtsi
+@@ -21,7 +21,11 @@
+ #endif
+ 
+ 		fit {
++#ifdef CONFIG_SPL_OPENSBI
+ 			description = "Configuration to load OpenSBI before U-Boot";
++#else
++			description = "Configuration to load M-mode U-Boot";
++#endif
+ 			#address-cells = <2>;
+ 			fit,fdt-list = "of-list";
+ 
+@@ -66,6 +70,7 @@
+ 				};
+ #endif
+ 
++#ifdef CONFIG_SPL_OPENSBI
+ 				opensbi {
+ 					description = "OpenSBI fw_dynamic Firmware";
+ 					type = "firmware";
+@@ -80,6 +85,7 @@
+ 						missing-msg = "opensbi";
+ 					};
+ 				};
++#endif
+ 
+ #if !defined(CONFIG_OF_BOARD) || defined(CONFIG_MULTI_DTB_FIT)
+ 				@fdt-SEQ {
+@@ -103,6 +109,7 @@
+ 				conf-1 {
+ #endif
+ 					description = "NAME";
++#ifdef CONFIG_SPL_OPENSBI
+ 					firmware = "opensbi";
+ #ifdef CONFIG_OPTEE
+ #ifdef CONFIG_SPL_LOAD_FIT_OPENSBI_OS_BOOT
+@@ -117,6 +124,12 @@
+ 					loadables = "uboot";
+ #endif
+ #endif /* CONFIG_OPTEE */
++#else
++					firmware = "uboot";
++#ifdef CONFIG_OPTEE
++					loadables = "tee";
++#endif
++#endif
+ 
+ #if !defined(CONFIG_OF_BOARD) || defined(CONFIG_MULTI_DTB_FIT)
+ 					fdt = "fdt-SEQ";
+-- 
+2.43.0
