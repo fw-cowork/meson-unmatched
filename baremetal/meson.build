@@ -39,14 +39,19 @@ subdir('apps')
 baremetal_artifacts = []
 foreach app : baremetal_apps
   app_name = app['name']
+  app_runtime_name = app.get('runtime', 'return')
+  if not baremetal_runtimes.has_key(app_runtime_name)
+    error('Unknown bare-metal runtime "' + app_runtime_name + '" for ' + app_name)
+  endif
+  app_runtime = baremetal_runtimes[app_runtime_name]
   app_build_subdir = app_name
   app_map_private = meson.current_build_dir() / app_build_subdir / (app_name + '.elf.p') / (app_name + '.map')
   app_elf = executable(
     app_name,
     app['sources'],
-    dependencies: [baremetal_uboot_go_dep] + app['dependencies'],
+    dependencies: [app_runtime['dependency']] + app['dependencies'],
     link_args: ['-Wl,-Map,' + app_map_private],
-    link_depends: baremetal_uboot_go_link_depends,
+    link_depends: app_runtime['link_depends'],
     name_suffix: 'elf',
     build_subdir: app_build_subdir,
     build_by_default: false,
@@ -61,6 +66,7 @@ foreach app : baremetal_apps
       baremetal_readelf,
       baremetal_nm,
       '@INPUT@',
+      app_runtime_name,
     ],
     capture: true,
     build_subdir: app_build_subdir,

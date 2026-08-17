@@ -14,6 +14,7 @@ Framework design, specification, and repository structure documentation.
 |---|---|
 | [DESIGN.md](architecture/DESIGN.md) | Build framework design document |
 | [baremetal-design.md](architecture/baremetal-design.md) | U-Boot `go` 裸机程序设计、Meson 分层和扩展约定 |
+| [ADDING-APP.md](../baremetal/ADDING-APP.md) | 新增 bare-metal 测试程序、构建检查及 TFTP 上板指南 |
 | [framework-spec.md](architecture/framework-spec.md) | Framework specification |
 | [repo-framework.md](architecture/repo-framework.md) | Repository framework organization |
 

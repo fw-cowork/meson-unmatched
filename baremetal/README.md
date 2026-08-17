@@ -10,7 +10,9 @@ baremetal/
 ├── meson.build                 公共编译选项、组件和产物规则
 ├── arch/riscv/cpu/             RISC-V 入口与链接布局
 │   ├── start.S                 入口、BSS 初始化和返回现场
-│   └── u-boot-go.lds           固定加载地址和镜像大小检查
+│   ├── start-standalone.S      私有栈和不返回入口
+│   ├── u-boot-go.lds           可返回镜像的固定布局
+│   └── u-boot-go-standalone.lds 私有栈镜像布局
 ├── lib/                        不依赖硬件的 freestanding 工具
 │   └── string.c                无 libc 字符串工具
 ├── soc/fu740/                  FU740 SoC 代码
@@ -27,7 +29,8 @@ baremetal/
 ├── apps/                       板端应用及其 Meson 依赖清单
 │   ├── unmatched-led/          D2 RGB LED 应用
 │   ├── unmatched-tests/        U-Boot go 板级测试
-│   └── unmatched-mmode-check/  M-mode CSR 访问检查
+│   ├── unmatched-mmode-check/  M-mode CSR 访问检查
+│   └── unmatched-standalone/   私有栈、不返回检查
 ├── tests/                      可在主机运行的纯算法测试
 └── tools/                      镜像检查等构建辅助工具
 ```
@@ -36,7 +39,8 @@ baremetal/
 `baremetal/io.h` 等基础接口；架构入口只负责 U-Boot 调用约定，不包含外设策略。
 具体来说：
 
-- `arch/riscv/cpu/` 拥有 RISC-V 入口、链接布局、BSS 初始化和返回 U-Boot 的 ABI 处理。
+- `arch/riscv/cpu/` 拥有 RISC-V 入口、链接布局、BSS 初始化，以及返回或接管 U-Boot 的
+  两种 ABI 处理。
 - `soc/` 拥有 FU740 地址空间和 PRCI 等 SoC 专属逻辑，不处理 D2 等板级功能。
 - `drivers/` 拥有 SiFive PWM/UART IP 的计算和寄存器操作，不写死 FU740 实例基地址。
 - `apps/` 拥有命令行、D2 通道映射和测试模式，并显式选择链接组件。
@@ -63,10 +67,11 @@ BSP 与 portable HAL 分工。文件位置则跟随 U-Boot RISC-V：U-Boot/SPL �
 standalone 示例更简单，直接把应用 C 函数设为入口，通过 `-Ttext` 指定加载地址，
 不提供通用入口汇编或 RISC-V 专用链接脚本。
 
-本项目仍保留共享 `start.S`，因为所有应用都需要在进入 C 代码前清零 BSS，并统一
-保存 U-Boot 的返回现场；链接脚本还负责 64 KiB 镜像边界检查。因此这两个文件放到
-`arch/riscv/cpu/`，但使用 `u-boot-go.lds` 明确它属于 `go` payload，而不是 U-Boot
-本体。当前仓库只有一个 SoC 和一种加载方式，没有照搬上游的完整构建框架：
+本项目提供两套共享 runtime：`start.S` 保存 U-Boot 返回现场，
+`start-standalone.S` 切换到镜像私有栈并禁止返回。两者都在进入 C 代码前清零 BSS，
+对应链接脚本负责各自的 64 KiB 边界检查。这些文件放到 `arch/riscv/cpu/`，并通过
+`u-boot-go*.lds` 明确它们属于 `go` payload，而不是 U-Boot 本体。当前仓库只有一个
+SoC 和一种加载方式，没有照搬上游的完整构建框架：
 
 - [OpenSBI source tree](https://github.com/riscv-software-src/opensbi)
 - [Freedom E SDK documentation](https://sifive.github.io/freedom-e-sdk-docs/contents.html)
@@ -103,6 +108,12 @@ standalone 示例更简单，直接把应用 C 函数设为入口，通过 `-Tte
 ./build.sh unmatched-mmode-check-artifacts
 ```
 
+构建使用私有栈且不会返回 U-Boot 的 standalone 检查镜像：
+
+```bash
+./build.sh unmatched-standalone-artifacts
+```
+
 运行不需要开发板的公共算法测试：
 
 ```bash
@@ -122,8 +133,8 @@ Yocto `populate_sdk` 安装器，再运行测试：
 
 没有共享安装器时，执行 `./build.sh toolchain` 从固定的 Freedom-U-SDK 2026.01.00
 源码生成。`test` 使用独立的 `builddir-test/`，运行上述主机测试，并用与正式构建
-相同的工具链交叉编译 `unmatched-tests`，检查入口地址和重定位。MMIO 用例仍需在
-真实 Unmatched 上由 U-Boot `go` 执行。
+相同的工具链交叉编译 `unmatched-tests` 和 `unmatched-standalone`，检查入口地址、
+重定位和私有栈符号。MMIO 及不返回行为仍需在真实 Unmatched 上由 U-Boot `go` 执行。
 
 `unmatched-led-bin` 仍可用于只生成板端加载的 `.bin`。
 
@@ -143,8 +154,9 @@ builddir/baremetal/unmatched-led/unmatched-led.check 入口地址和重定位检
 [`apps/unmatched-tests/README.md`](apps/unmatched-tests/README.md)。
 
 程序使用与当前 U-Boot 相同的 `rv64imafdc/lp64d` ABI，固定链接到
-`0x84000000`。链接脚本检查完整运行时镜像不超过 64 KiB；构建产物检查还会确认
-`_start` 位于镜像首地址，且 ELF 中没有 `go` 无法处理的运行时重定位。
+`0x84000000`。可返回 runtime 允许代码、数据和 BSS 使用完整 64 KiB；standalone
+runtime 把顶部 16 KiB 保留为私有栈，因此其他段最多使用前 48 KiB。构建产物检查还会
+确认 `_start` 位于镜像首地址，且 ELF 中没有 `go` 无法处理的运行时重定位。
 
 ## U-Boot `go` 如何启动程序
 
@@ -232,6 +244,27 @@ RISC-V 的 `ret` 本质是跳到 `ra` 保存的地址。`start.S` 必须先保�
 U-Boot 后继续运行。对时钟、中断、缓存、页表或 trap 配置的改动也不会自动恢复；这类
 测试完成后应重置开发板，再继续正常启动流程。
 
+## 如何接管 hart 而不返回 U-Boot
+
+应用 manifest 设置 `'runtime': 'standalone'` 后，构建系统会改用
+`start-standalone.S` 和 `u-boot-go-standalone.lds`。入口立即把 `sp` 设置为
+`0x84010000`；栈在 `0x8400c000..0x84010000` 内向低地址增长。C 入口即使意外返回，
+汇编也只会进入永久循环，不会使用已经放弃的 U-Boot 栈或返回地址。
+
+```meson
+baremetal_apps += [{
+  'name': 'my-standalone-test',
+  'runtime': 'standalone',
+  'sources': files('main.c'),
+  'dependencies': [baremetal_sifive_uart_dep],
+}]
+```
+
+这种模式只接管执行 `go` 的当前 hart；它仍依赖 U-Boot 已初始化的 DDR、时钟、串口和
+引脚复用，不是复位入口固件。程序不会恢复 U-Boot 命令提示符，结束实验必须复位开发板。
+可直接上板验证的实现见
+[apps/unmatched-standalone/README.md](apps/unmatched-standalone/README.md)。
+
 ## 公共 API
 
 `include/baremetal/` 提供基础类型、32 位 MMIO 读写、I/O fence、`BM_ARRAY_SIZE()`、
@@ -279,12 +312,21 @@ sifive_pwm_apply(FU740_PWM1_BASE, &config);
 
 ## 添加程序
 
+可直接照做的完整目录模板、入口代码、依赖选择、构建检查和 TFTP 上板步骤见
+[添加 bare-metal 测试程序](ADDING-APP.md)。下面保留扩展规则摘要。
+
 1. 新建 `baremetal/apps/<name>/main.c`，实现入口：
 
    ```c
    #include <baremetal/app.h>
 
-   bm_ulong baremetal_main(int argc, char *const argv[]);
+   bm_ulong baremetal_main(int argc, char *const argv[])
+   {
+           /* argv[0] 是 U-Boot go 命令中的入口地址字符串。 */
+           (void)argc;
+           (void)argv;
+           return 0;
+   }
    ```
 
 2. 在应用目录增加 `meson.build`，登记输出名、私有源码和组件依赖；再在
@@ -302,12 +344,16 @@ sifive_pwm_apply(FU740_PWM1_BASE, &config);
    `baremetal_sifive_pwm_dep` 或 `baremetal_sifive_uart_dep`。不使用的组件不会进入该程序
    的链接输入。
 
+   默认 runtime 是 `return`。需要使用私有栈并永久接管当前 hart 时，在 manifest 中增加
+   `'runtime': 'standalone'`；不要在应用目录复制入口汇编或链接脚本。
+
 3. 执行 `./build.sh baremetal`，或构建 `<输出名>-artifacts`。只需要板端原始镜像时
    可以构建 `<输出名>-bin`。
 
 链接器的 `--gc-sections` 会删除程序没有调用的公共函数，所以新增通用模块不会强制
-增加每个镜像的大小。程序不能依赖 libc、OpenSBI 调用或 U-Boot 内部符号。若要修改
-统一加载地址或最大镜像大小，只修改 `arch/riscv/cpu/u-boot-go.lds`。
+增加每个镜像的大小。程序不能依赖 libc、OpenSBI 调用或 U-Boot 内部符号。加载地址或
+镜像边界属于公共 runtime 策略，应同步审查 `arch/riscv/cpu/u-boot-go*.lds` 和镜像检查
+脚本，不能在单个应用中覆盖。
 
 当前示例及其板端运行方法见
 [apps/unmatched-led/README.md](apps/unmatched-led/README.md)。需要验证 MMIO 和真实硬件的

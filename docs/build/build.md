@@ -79,6 +79,7 @@ file 声明的编译器：
 ./build.sh unmatched-led-artifacts # D2 RGB LED 的全部分析产物
 ./build.sh unmatched-tests-artifacts # FU740 板级测试镜像及分析产物
 ./build.sh unmatched-mmode-check-artifacts # M-mode CSR 检查镜像
+./build.sh unmatched-standalone-artifacts # 私有栈且不返回 U-Boot 的检查镜像
 ./build.sh rootfs          # BusyBox rootfs
 ./build.sh bootchain       # OpenSBI + U-Boot + Linux
 ./build.sh                 # 完整物理板 SD 卡镜像

@@ -24,6 +24,7 @@ Common targets:
   baremetal, baremetal-test, unmatched-led-bin, unmatched-led-artifacts,
   unmatched-tests-bin, unmatched-tests-artifacts,
   unmatched-mmode-check-bin, unmatched-mmode-check-artifacts,
+  unmatched-standalone-bin, unmatched-standalone-artifacts,
   busybox, rootfs, bootchain, sd-image, qemu-image, clean-lite
 
 Dev targets (preserve source edits + .config for iteration):
@@ -41,6 +42,7 @@ Examples:
   ./build.sh baremetal-test  Run host-side bare-metal algorithm tests
   ./build.sh unmatched-tests-artifacts  Build board-side test artifacts
   ./build.sh unmatched-mmode-check-artifacts  Build the M-mode CSR probe
+  ./build.sh unmatched-standalone-artifacts  Build the private-stack non-returning payload
   ./build.sh          Build deploy/unmatched-lite.img for the FU740 board
   ./build.sh qemu     Build deploy/qemu/qemu-lite.img for QEMU virt
 
@@ -78,7 +80,7 @@ if [[ "${1:-}" == test ]]; then
     fi
     BUILD_DIR="${UNMATCHED_LITE_BUILD_DIR:-${SCRIPT_DIR}/builddir-test}"
     CROSS_FILE="${UNMATCHED_LITE_CROSS_FILE:-${DEFAULT_CROSS_FILE}}"
-    set -- baremetal-test unmatched-tests-artifacts
+    set -- baremetal-test unmatched-tests-artifacts unmatched-standalone-artifacts
 fi
 
 PROFILE=unmatched
